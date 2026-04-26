@@ -1,6 +1,11 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdbool.h>
+
+// 定义 CPU 类型和子类型
+typedef uint32_t cpu_type_t;
+typedef uint32_t cpu_subtype_t;
 
 // Mach-O 魔数
 #define MH_MAGIC    0xfeedface
@@ -121,4 +126,5 @@ struct entry_point_command {
 bool parse_macho_header(const char* filename, struct mach_header** header, bool* is_64bit);
 bool map_macho_segments(const char* filename, struct mach_header* header, bool is_64bit, void** base_address);
 void* find_main_function(const char* filename, struct mach_header* header, bool is_64bit, void* base_address);
+int execute_main_function(void* main_addr, int argc, char* argv[]);
 void unmap_macho_segments(void* base_address, struct mach_header* header, bool is_64bit);
