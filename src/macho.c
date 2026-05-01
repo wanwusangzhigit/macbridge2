@@ -4,6 +4,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef _WIN32
+    #define PRIx64 "I64x"
+#else
+    #define PRIx64 "lx"
+#endif
+
 // 解析 Mach-O 头部
 bool parse_macho_header(const char* filename, struct mach_header** header, bool* is_64bit) {
     FILE* file = fopen(filename, "rb");
@@ -82,8 +88,8 @@ bool map_macho_segments(const char* filename, struct mach_header* header, bool i
             if (is_64bit) {
                 struct segment_command_64* seg = (struct segment_command_64*)cmd;
                 // 处理 64 位段
-                printf("Segment: %s, vmaddr: 0x%lx, vmsize: 0x%lx\n", 
-                       seg->segname, seg->vmaddr, seg->vmsize);
+                printf("Segment: %s, vmaddr: 0x%" PRIx64 ", vmsize: 0x%" PRIx64 "\n", 
+                       seg->segname, (uint64_t)seg->vmaddr, (uint64_t)seg->vmsize);
                 
                 // 设置内存保护
                 if (seg->initprot & 0x1) { // PROT_READ
@@ -125,7 +131,7 @@ void* find_main_function(const char* filename, struct mach_header* header, bool 
         if (cmd->cmd == LC_MAIN) {
             struct entry_point_command* entry = (struct entry_point_command*)cmd;
             main_addr = (uint8_t*)base_address + entry->entryoff;
-            printf("Found main function at offset: 0x%lx\n", entry->entryoff);
+            printf("Found main function at offset: 0x%" PRIx64 "\n", (uint64_t)entry->entryoff);
             break;
         }
         cmd_ptr += cmd->cmdsize;

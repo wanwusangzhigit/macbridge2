@@ -2,10 +2,72 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <pthread.h>
+
+#ifdef _WIN32
+    #include <Windows.h>
+    #include <process.h>
+    
+    #define pid_t int
+    #define uid_t int
+    #define gid_t int
+    #define mode_t int
+    
+    #define SEEK_SET 0
+    #define SEEK_CUR 1
+    #define SEEK_END 2
+    
+    #define F_OK 0
+    #define R_OK 4
+    #define W_OK 2
+    #define X_OK 1
+    
+    #define getpid() _getpid()
+    #define getppid() _getppid()
+    #define getuid() 0
+    #define geteuid() 0
+    #define getgid() 0
+    #define getegid() 0
+    
+    #define access(path, mode) _access(path, mode)
+    #define rename(oldpath, newpath) rename(oldpath, newpath)
+    #define unlink(path) _unlink(path)
+    
+    struct stat {
+        off_t st_size;
+    };
+    
+    static int lseek(int fd, off_t offset, int whence) {
+        return SetFilePointer((HANDLE)fd_map[fd], offset, NULL, whence);
+    }
+    
+    static int stat(const char* path, struct stat* buf) {
+        WIN32_FILE_ATTRIBUTE_DATA attr;
+        if (!GetFileAttributesExA(path, GetFileExInfoStandard, &attr)) {
+            return -1;
+        }
+        buf->st_size = (attr.nFileSizeHigh << 32) | attr.nFileSizeLow;
+        return 0;
+    }
+    
+    static int fstat(int fd, struct stat* buf) {
+        HANDLE handle = (HANDLE)fd_map[fd];
+        LARGE_INTEGER size;
+        if (!GetFileSizeEx(handle, &size)) {
+            return -1;
+        }
+        buf->st_size = size.QuadPart;
+        return 0;
+    }
+    
+    static unsigned long pthread_self(void) {
+        return (unsigned long)_beginthreadex(NULL, 0, NULL, NULL, 0, NULL);
+    }
+#else
+    #include <fcntl.h>
+    #include <sys/stat.h>
+    #include <unistd.h>
+    #include <pthread.h>
+#endif
 
 // 系统调用表
 static syscall_handler_t syscall_table[256] = {0};
