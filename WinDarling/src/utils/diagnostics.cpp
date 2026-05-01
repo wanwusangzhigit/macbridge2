@@ -95,8 +95,8 @@ void PerformanceProfiler::stopTiming(const std::string& name) {
         metric.callCount++;
         metric.totalTimeMs += elapsed;
         metric.avgTimeMs = metric.totalTimeMs / metric.callCount;
-        metric.minTimeMs = std::min(metric.minTimeMs, elapsed);
-        metric.maxTimeMs = std::max(metric.maxTimeMs, elapsed);
+        metric.minTimeMs = (std::min)(metric.minTimeMs, elapsed);
+        metric.maxTimeMs = (std::max)(metric.maxTimeMs, elapsed);
         
         mActiveTimers.erase(it);
     }
