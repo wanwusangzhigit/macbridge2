@@ -10,6 +10,10 @@
     typedef DWORD platform_size_t;
     typedef LONG ssize_t;
     typedef LONG off_t;
+    typedef int pid_t;
+    typedef int uid_t;
+    typedef int gid_t;
+    typedef int mode_t;
     
     #define PROT_READ  0x1
     #define PROT_WRITE 0x2
