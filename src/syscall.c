@@ -3,9 +3,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+// 文件描述符映射表
+static platform_handle fd_map[1024] = {0};
+static int next_fd = 3; // 0, 1, 2 分别对应 stdin, stdout, stderr
+
 #ifdef _WIN32
     #include <Windows.h>
     #include <process.h>
+    #include <io.h>
+    #include <direct.h>
     
     #define SEEK_SET 0
     #define SEEK_CUR 1
@@ -26,13 +32,20 @@
     #define access(path, mode) _access(path, mode)
     #define rename(oldpath, newpath) rename(oldpath, newpath)
     #define unlink(path) _unlink(path)
+    #define chmod(path, mode) _chmod(path, mode)
+    #define chown(path, owner, group) 0
     
     struct stat {
         off_t st_size;
     };
     
-    static int lseek(int fd, off_t offset, int whence) {
-        return SetFilePointer((HANDLE)fd_map[fd], offset, NULL, whence);
+    static off_t lseek(int fd, off_t offset, int whence) {
+        LONG high = 0;
+        DWORD result = SetFilePointer((HANDLE)fd_map[fd], (LONG)offset, &high, (DWORD)whence);
+        if (result == INVALID_SET_FILE_POINTER) {
+            return -1;
+        }
+        return ((off_t)high << 32) | result;
     }
     
     static int stat(const char* path, struct stat* buf) {
@@ -40,7 +53,7 @@
         if (!GetFileAttributesExA(path, GetFileExInfoStandard, &attr)) {
             return -1;
         }
-        buf->st_size = (attr.nFileSizeHigh << 32) | attr.nFileSizeLow;
+        buf->st_size = ((off_t)attr.nFileSizeHigh << 32) | (off_t)attr.nFileSizeLow;
         return 0;
     }
     
@@ -50,7 +63,7 @@
         if (!GetFileSizeEx(handle, &size)) {
             return -1;
         }
-        buf->st_size = size.QuadPart;
+        buf->st_size = (off_t)size.QuadPart;
         return 0;
     }
     
@@ -67,16 +80,12 @@
 // 系统调用表
 static syscall_handler_t syscall_table[256] = {0};
 
-// 文件描述符映射表
-static platform_handle fd_map[1024] = {0};
-static int next_fd = 3; // 0, 1, 2 分别对应 stdin, stdout, stderr
-
 // 初始化系统调用表
 void init_syscall_table(void) {
     // 初始化文件描述符映射
-    fd_map[0] = 0; // stdin
-    fd_map[1] = 1; // stdout
-    fd_map[2] = 2; // stderr
+    fd_map[0] = (platform_handle)0; // stdin
+    fd_map[1] = (platform_handle)0; // stdout
+    fd_map[2] = (platform_handle)0; // stderr
     
     // 注册 BSD 系统调用
     syscall_table[SYS_open] = (syscall_handler_t)sys_open;
