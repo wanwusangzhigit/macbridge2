@@ -21,7 +21,7 @@ public:
     ~NSString();
     
     static NSString* stringWithUTF8String(const char* cString);
-    static NSString* stringWithFormat(const std::string& format, ...);
+    static NSString* stringWithFormat(const char* format, ...);
     
     const char* UTF8String() const;
     size_t length() const;

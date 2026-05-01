@@ -26,11 +26,11 @@ NSString* NSString::stringWithUTF8String(const char* cString) {
     return new NSString(cString);
 }
 
-NSString* NSString::stringWithFormat(const std::string& format, ...) {
+NSString* NSString::stringWithFormat(const char* format, ...) {
     char buffer[1024];
     va_list args;
     va_start(args, format);
-    vsnprintf(buffer, sizeof(buffer), format.c_str(), args);
+    vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
     return new NSString(buffer);
 }
