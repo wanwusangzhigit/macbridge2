@@ -8,6 +8,19 @@
     #include <Windows.h>
     typedef HANDLE platform_handle;
     typedef DWORD platform_size_t;
+    typedef LONG ssize_t;
+    typedef LONG off_t;
+    
+    #define PROT_READ  0x1
+    #define PROT_WRITE 0x2
+    #define PROT_EXEC  0x4
+    
+    #define O_RDONLY   0x0000
+    #define O_WRONLY   0x0001
+    #define O_RDWR     0x0002
+    #define O_CREAT    0x0100
+    #define O_TRUNC    0x0200
+    #define O_APPEND   0x0400
 #else
     #include <sys/mman.h>
     #include <unistd.h>

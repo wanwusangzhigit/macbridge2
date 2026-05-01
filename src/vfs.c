@@ -2,9 +2,75 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <dirent.h>
-#include <sys/stat.h>
+
+#ifdef _WIN32
+    #include <Windows.h>
+    
+    #define F_OK 0
+    #define R_OK 4
+    #define W_OK 2
+    #define X_OK 1
+    
+    #define getcwd(buf, size) _getcwd(buf, size)
+    #define mkdir(path, mode) _mkdir(path)
+    #define access(path, mode) _access(path, mode)
+    #define unlink(path) _unlink(path)
+    
+    typedef struct {
+        HANDLE hFind;
+        WIN32_FIND_DATAA findData;
+        bool first;
+    } DIR;
+    
+    static DIR* opendir(const char* path) {
+        char search_path[MAX_PATH];
+        sprintf(search_path, "%s/*", path);
+        
+        DIR* dir = (DIR*)malloc(sizeof(DIR));
+        if (!dir) return NULL;
+        
+        dir->hFind = FindFirstFileA(search_path, &dir->findData);
+        if (dir->hFind == INVALID_HANDLE_VALUE) {
+            free(dir);
+            return NULL;
+        }
+        dir->first = true;
+        return dir;
+    }
+    
+    static struct dirent {
+        char d_name[256];
+    };
+    
+    static struct dirent* readdir(DIR* dir) {
+        static struct dirent entry;
+        
+        if (dir->first) {
+            dir->first = false;
+        } else {
+            if (!FindNextFileA(dir->hFind, &dir->findData)) {
+                return NULL;
+            }
+        }
+        
+        strncpy(entry.d_name, dir->findData.cFileName, sizeof(entry.d_name) - 1);
+        entry.d_name[sizeof(entry.d_name) - 1] = '\0';
+        return &entry;
+    }
+    
+    static void closedir(DIR* dir) {
+        FindClose(dir->hFind);
+        free(dir);
+    }
+    
+    static void rewinddir(DIR* dir) {
+        // 简化实现
+    }
+#else
+    #include <unistd.h>
+    #include <dirent.h>
+    #include <sys/stat.h>
+#endif
 
 // 虚拟文件系统根节点
 static vfs_entry* vfs_root = NULL;
