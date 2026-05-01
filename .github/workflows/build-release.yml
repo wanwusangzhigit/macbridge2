@@ -51,13 +51,24 @@ jobs:
           msbuild /version
           build.bat
 
-      - name: Build C++ framework
+      - name: Build C++ framework (Unix)
+        if: runner.os != 'Windows'
         run: |
           cd WinDarling
           mkdir -p build
           cd build
           cmake ..
           cmake --build . --config Release -j $(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+
+      - name: Build C++ framework (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          cd WinDarling
+          if not exist build mkdir build
+          cd build
+          cmake ..
+          cmake --build . --config Release
 
       - name: Prepare artifacts (Unix)
         if: runner.os != 'Windows'
