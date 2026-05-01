@@ -13,7 +13,7 @@ if exist "%VS_PATH%\Common7\Tools\VsDevCmd.bat" (
   call "%VS_PATH%\Common7\Tools\VsDevCmd.bat"
 )
 
-cl /nologo /W3 /O2 /I"%SRC_DIR%" "%SRC_DIR%\macho.c" "%SRC_DIR%\syscall.c" "%SRC_DIR%\vfs.c" "%SRC_DIR%\dyld.c" "%SRC_DIR%\platform.c" "%SRC_DIR%\test_loader.c" /Fe"%BIN_DIR%\test_loader.exe"
+cl /nologo /w /O2 /I"%SRC_DIR%" "%SRC_DIR%\macho.c" "%SRC_DIR%\syscall.c" "%SRC_DIR%\vfs.c" "%SRC_DIR%\dyld.c" "%SRC_DIR%\platform.c" "%SRC_DIR%\test_loader.c" /Fe"%BIN_DIR%\test_loader.exe"
 
 if %ERRORLEVEL% equ 0 (
     echo Build successful!

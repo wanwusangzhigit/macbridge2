@@ -23,7 +23,10 @@ static int next_fd = 3; // 0, 1, 2 分别对应 stdin, stdout, stderr
     #define X_OK 1
     
     #define getpid() _getpid()
-    #define getppid() _getppid()
+    static int getppid(void) {
+        // Windows 平台简化实现，返回 0 作为父进程 ID
+        return 0;
+    }
     #define getuid() 0
     #define geteuid() 0
     #define getgid() 0
