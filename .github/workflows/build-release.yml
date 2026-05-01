@@ -1,0 +1,140 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: windarling-linux
+            build_script: ./build.sh
+          - os: windows-latest
+            artifact_name: windarling-windows
+            build_script: build.bat
+          - os: macos-latest
+            artifact_name: windarling-macos
+            build_script: ./build.sh
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup CMake
+        uses: lukka/get-cmake@latest
+
+      - name: Build C core (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x build.sh
+          ${{ matrix.build_script }}
+
+      - name: Build C core (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          build.bat
+
+      - name: Build C++ framework
+        run: |
+          cd WinDarling
+          mkdir -p build
+          cd build
+          cmake ..
+          cmake --build . --config Release -j $(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)
+
+      - name: Prepare artifacts (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p artifacts
+          cp bin/test_loader artifacts/ || true
+          cp WinDarling/build/test_foundation artifacts/ || true
+          cp WinDarling/build/advanced_demo artifacts/ || true
+          cp WinDarling/build/diagnostics_demo artifacts/ || true
+
+      - name: Prepare artifacts (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          mkdir artifacts
+          copy bin\test_loader.exe artifacts\ || echo "C core not built"
+          copy WinDarling\build\Release\test_foundation.exe artifacts\ || copy WinDarling\build\test_foundation.exe artifacts\ || echo "test_foundation not found"
+          copy WinDarling\build\Release\advanced_demo.exe artifacts\ || copy WinDarling\build\advanced_demo.exe artifacts\ || echo "advanced_demo not found"
+          copy WinDarling\build\Release\diagnostics_demo.exe artifacts\ || copy WinDarling\build\diagnostics_demo.exe artifacts\ || echo "diagnostics_demo not found"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: artifacts/
+          retention-days: 30
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release_artifacts
+
+      - name: Display structure of downloaded files
+        run: ls -laR release_artifacts
+
+      - name: Create release archives
+        run: |
+          cd release_artifacts
+          zip -r ../windarling-linux.zip windarling-linux/ || true
+          zip -r ../windarling-windows.zip windarling-windows/ || true
+          zip -r ../windarling-macos.zip windarling-macos/ || true
+          cd ..
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: WinDarling ${{ github.ref_name }}
+          body: |
+            ## WinDarling ${{ github.ref_name }}
+            
+            ### Changes
+            See [commit history](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}) for details.
+            
+            ### Downloads
+            - **Linux**: windarling-linux.zip
+            - **Windows**: windarling-windows.zip
+            - **macOS**: windarling-macos.zip
+            
+            ### How to use
+            1. Download the archive for your platform
+            2. Extract the archive
+            3. Run the executables
+            
+            ### Build artifacts
+            - `test_loader` - Mach-O loader test program
+            - `test_foundation` - Foundation framework tests
+            - `advanced_demo` - Advanced usage demo
+            - `diagnostics_demo` - Diagnostics tools demo
+          files: |
+            windarling-linux.zip
+            windarling-windows.zip
+            windarling-macos.zip
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
