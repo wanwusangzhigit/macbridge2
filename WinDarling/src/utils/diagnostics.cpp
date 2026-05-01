@@ -5,6 +5,9 @@
 #include <ctime>
 #include <cstdint>
 #include <unistd.h>
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#endif
 
 namespace WinDarling {
 
@@ -258,7 +261,13 @@ void MemoryTracker::printReport(std::ostream& out) const {
 
 // SystemInfo 实现
 std::string SystemInfo::getOSName() {
+#ifdef __APPLE__
+    return "macOS";
+#elif _WIN32
+    return "Windows";
+#else
     return "Linux";
+#endif
 }
 
 std::string SystemInfo::getOSVersion() {
@@ -274,7 +283,21 @@ int SystemInfo::getProcessorCount() {
 }
 
 size_t SystemInfo::getAvailableMemory() {
-    return (size_t)sysconf(_SC_PAGESIZE) * (size_t)sysconf(_SC_AVPHYS_PAGES);
+    size_t pageSize = (size_t)sysconf(_SC_PAGESIZE);
+#ifdef __APPLE__
+    int mib[2];
+    size_t length;
+    int64_t availableMemory = 0;
+    mib[0] = CTL_HW;
+    mib[1] = HW_MEMSIZE;
+    length = sizeof(availableMemory);
+    if (sysctl(mib, 2, &availableMemory, &length, NULL, 0) == 0) {
+        return (size_t)availableMemory;
+    }
+    return 0;
+#else
+    return pageSize * (size_t)sysconf(_SC_AVPHYS_PAGES);
+#endif
 }
 
 std::string SystemInfo::getCurrentDateTime() {
