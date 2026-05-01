@@ -3,11 +3,24 @@
 #include <cstdio>
 #include <cstdarg>
 #include <ctime>
+#include <algorithm>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <direct.h>
+#include <io.h>
+#include <process.h>
+#define getpid _getpid
+#define getcwd _getcwd
+#define chdir _chdir
+#define mkdir(path, mode) _mkdir(path)
+#define rmdir _rmdir
+#else
 #include <unistd.h>
 #include <sys/stat.h>
 #include <dirent.h>
 #include <pthread.h>
-#include <algorithm>
+#endif
 
 namespace WinDarling {
 
@@ -542,23 +555,43 @@ NSFileManager::NSFileManager() {}
 NSFileManager::~NSFileManager() {}
 
 bool NSFileManager::fileExistsAtPath(const std::string& path) {
+#ifdef _WIN32
+    struct _stat buffer;
+    return (_stat(path.c_str(), &buffer) == 0);
+#else
     struct stat buffer;
     return (stat(path.c_str(), &buffer) == 0);
+#endif
 }
 
 bool NSFileManager::isDirectoryAtPath(const std::string& path) {
+#ifdef _WIN32
+    struct _stat buffer;
+    if (_stat(path.c_str(), &buffer) == 0) {
+        return (buffer.st_mode & _S_IFDIR) != 0;
+    }
+    return false;
+#else
     struct stat buffer;
     if (stat(path.c_str(), &buffer) == 0) {
         return S_ISDIR(buffer.st_mode);
     }
     return false;
+#endif
 }
 
 bool NSFileManager::createDirectoryAtPath(const std::string& path, bool withIntermediateDirectories) {
+#ifdef _WIN32
+    if (withIntermediateDirectories) {
+        return (_mkdir(path.c_str()) == 0 || errno == EEXIST);
+    }
+    return (_mkdir(path.c_str()) == 0);
+#else
     if (withIntermediateDirectories) {
         return (mkdir(path.c_str(), 0755) == 0 || errno == EEXIST);
     }
     return (mkdir(path.c_str(), 0755) == 0);
+#endif
 }
 
 bool NSFileManager::removeItemAtPath(const std::string& path) {
@@ -580,6 +613,19 @@ NSDictionary* NSFileManager::attributesOfItemAtPath(const std::string& path) {
 
 NSArray* NSFileManager::contentsOfDirectoryAtPath(const std::string& path) {
     NSArray* result = NSArray::array();
+#ifdef _WIN32
+    std::string searchPath = path + "\\*";
+    WIN32_FIND_DATAA findData;
+    HANDLE hFind = FindFirstFileA(searchPath.c_str(), &findData);
+    if (hFind != INVALID_HANDLE_VALUE) {
+        do {
+            if (findData.cFileName[0] != '.') {
+                result->addObject(new NSString(findData.cFileName));
+            }
+        } while (FindNextFileA(hFind, &findData));
+        FindClose(hFind);
+    }
+#else
     DIR* dir = opendir(path.c_str());
     if (dir) {
         struct dirent* entry;
@@ -590,6 +636,7 @@ NSArray* NSFileManager::contentsOfDirectoryAtPath(const std::string& path) {
         }
         closedir(dir);
     }
+#endif
     return result;
 }
 
@@ -634,21 +681,36 @@ bool NSFileManager::changeCurrentDirectoryPath(const std::string& path) {
 // NSLock Implementation
 // ============================================================================
 NSLock::NSLock() : m_locked(false), m_mutex(nullptr) {
+#ifdef _WIN32
+    CRITICAL_SECTION* cs = new CRITICAL_SECTION;
+    InitializeCriticalSection(cs);
+    m_mutex = cs;
+#else
     pthread_mutex_t* mutex = new pthread_mutex_t;
     pthread_mutex_init(mutex, nullptr);
     m_mutex = mutex;
+#endif
 }
 
 NSLock::~NSLock() {
     if (m_mutex) {
+#ifdef _WIN32
+        DeleteCriticalSection(static_cast<CRITICAL_SECTION*>(m_mutex));
+        delete static_cast<CRITICAL_SECTION*>(m_mutex);
+#else
         pthread_mutex_destroy(static_cast<pthread_mutex_t*>(m_mutex));
         delete static_cast<pthread_mutex_t*>(m_mutex);
+#endif
     }
 }
 
 void NSLock::lock() {
     if (m_mutex) {
+#ifdef _WIN32
+        EnterCriticalSection(static_cast<CRITICAL_SECTION*>(m_mutex));
+#else
         pthread_mutex_lock(static_cast<pthread_mutex_t*>(m_mutex));
+#endif
         m_locked = true;
     }
 }
@@ -656,17 +718,29 @@ void NSLock::lock() {
 void NSLock::unlock() {
     if (m_mutex) {
         m_locked = false;
+#ifdef _WIN32
+        LeaveCriticalSection(static_cast<CRITICAL_SECTION*>(m_mutex));
+#else
         pthread_mutex_unlock(static_cast<pthread_mutex_t*>(m_mutex));
+#endif
     }
 }
 
 bool NSLock::tryLock() {
     if (m_mutex) {
+#ifdef _WIN32
+        BOOL result = TryEnterCriticalSection(static_cast<CRITICAL_SECTION*>(m_mutex));
+        if (result) {
+            m_locked = true;
+            return true;
+        }
+#else
         int result = pthread_mutex_trylock(static_cast<pthread_mutex_t*>(m_mutex));
         if (result == 0) {
             m_locked = true;
             return true;
         }
+#endif
     }
     return false;
 }
@@ -709,7 +783,11 @@ NSThread* NSThread::currentThread() {
 }
 
 void NSThread::sleepForTimeInterval(double seconds) {
+#ifdef _WIN32
+    Sleep(static_cast<DWORD>(seconds * 1000));
+#else
     usleep(static_cast<useconds_t>(seconds * 1000000));
+#endif
 }
 
 } // namespace WinDarling

@@ -4,7 +4,12 @@
 #include <sstream>
 #include <ctime>
 #include <cstdint>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <unistd.h>
+#endif
 #ifdef __APPLE__
 #include <sys/sysctl.h>
 #endif
@@ -279,12 +284,22 @@ std::string SystemInfo::getArchitecture() {
 }
 
 int SystemInfo::getProcessorCount() {
+#ifdef _WIN32
+    SYSTEM_INFO sysinfo;
+    GetSystemInfo(&sysinfo);
+    return sysinfo.dwNumberOfProcessors;
+#else
     return (int)sysconf(_SC_NPROCESSORS_ONLN);
+#endif
 }
 
 size_t SystemInfo::getAvailableMemory() {
-    size_t pageSize = (size_t)sysconf(_SC_PAGESIZE);
-#ifdef __APPLE__
+#ifdef _WIN32
+    MEMORYSTATUSEX status;
+    status.dwLength = sizeof(status);
+    GlobalMemoryStatusEx(&status);
+    return (size_t)status.ullAvailPhys;
+#elif defined(__APPLE__)
     int mib[2];
     size_t length;
     int64_t availableMemory = 0;
@@ -296,6 +311,7 @@ size_t SystemInfo::getAvailableMemory() {
     }
     return 0;
 #else
+    size_t pageSize = (size_t)sysconf(_SC_PAGESIZE);
     return pageSize * (size_t)sysconf(_SC_AVPHYS_PAGES);
 #endif
 }
