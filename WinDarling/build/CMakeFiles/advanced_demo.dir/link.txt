@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/advanced_demo.dir/examples/advanced_demo.cpp.o CMakeFiles/advanced_demo.dir/src/foundation/FoundationCpp.cpp.o CMakeFiles/advanced_demo.dir/src/appkit/AppKitCpp.cpp.o -o advanced_demo 

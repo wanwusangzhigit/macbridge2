@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/test_foundation.dir/tests/test_foundation.cpp.o CMakeFiles/test_foundation.dir/src/foundation/FoundationCpp.cpp.o -o test_foundation 
