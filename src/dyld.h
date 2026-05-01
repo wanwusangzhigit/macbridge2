@@ -24,6 +24,9 @@ void dyld_init(void);
 // 关闭 dyld 模拟器
 void dyld_cleanup(void);
 
+// 添加符号到符号表
+void dyld_add_symbol(const char* name, void* address);
+
 // 加载动态库
 void* dyld_load_image(const char* path);
 
