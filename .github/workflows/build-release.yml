@@ -34,6 +34,10 @@ jobs:
       - name: Setup CMake
         uses: lukka/get-cmake@latest
 
+      - name: Setup MSBuild (Windows)
+        if: runner.os == 'Windows'
+        uses: microsoft/setup-msbuild@v2
+
       - name: Build C core (Unix)
         if: runner.os != 'Windows'
         run: |
@@ -44,6 +48,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: cmd
         run: |
+          msbuild /version
           build.bat
 
       - name: Build C++ framework
