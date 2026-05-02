@@ -1,15 +1,15 @@
-
 #include "app_bundle.h"
 #include "macho.h"
 #include "dyld.h"
 #include "platform.h"
 #include "syscall.h"
 #include "vfs.h"
+#include "util.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define VERSION "0.6.1"
+#define VERSION "0.7.0"
 
 static void print_banner(void) {
     fprintf(stdout, "\n");
@@ -54,8 +54,13 @@ static void print_version(void) {
 }
 
 int main(int argc, char* argv[]) {
+    config_init();
+    log_init(NULL, LOG_LEVEL_INFO);
+    
     if (argc < 2) {
         print_usage(argv[0]);
+        log_cleanup();
+        config_cleanup();
         return 1;
     }
     
@@ -63,11 +68,15 @@ int main(int argc, char* argv[]) {
     
     if (strcmp(command, "help") == 0 || strcmp(command, "--help") == 0 || strcmp(command, "-h") == 0) {
         print_usage(argv[0]);
+        log_cleanup();
+        config_cleanup();
         return 0;
     }
     
     if (strcmp(command, "version") == 0 || strcmp(command, "--version") == 0 || strcmp(command, "-v") == 0) {
         print_version();
+        log_cleanup();
+        config_cleanup();
         return 0;
     }
     
@@ -75,14 +84,16 @@ int main(int argc, char* argv[]) {
         if (argc < 3) {
             fprintf(stderr, "Error: Mach-O path required\n\n");
             print_usage(argv[0]);
+            log_cleanup();
+            config_cleanup();
             return 1;
         }
         
         const char* filename = argv[2];
+        log_info("Testing Mach-O load: %s", filename);
         fprintf(stdout, "Testing Mach-O load: %s\n", filename);
         fprintf(stdout, "────────────────────────────────────────\n");
         
-        // 初始化各个子系统
         init_syscall_table();
         vfs_init();
         dyld_init();
@@ -90,9 +101,8 @@ int main(int argc, char* argv[]) {
         struct mach_header* header = NULL;
         bool is_64bit = false;
         
-        // 解析 Mach-O 头部
         if (!parse_macho_header(filename, &header, &is_64bit)) {
-            fprintf(stderr, "\nError: Failed to parse Mach-O header\n");
+            log_error("Failed to parse Mach-O header");
             goto cleanup;
         }
         
@@ -104,17 +114,15 @@ int main(int argc, char* argv[]) {
         fprintf(stdout, "  Size of cmds:   %d\n", header->sizeofcmds);
         fprintf(stdout, "  64-bit:         %s\n", is_64bit ? "Yes" : "No");
         
-        // 映射段到内存
         void* base_address = NULL;
         if (!map_macho_segments(filename, header, is_64bit, &base_address)) {
-            fprintf(stderr, "\nError: Failed to map Mach-O segments\n");
+            log_error("Failed to map Mach-O segments");
             goto cleanup;
         }
         
         fprintf(stdout, "\nSegment Mapping:\n");
         fprintf(stdout, "  Base address:   %p\n", base_address);
         
-        // 查找 main 函数
         void* main_addr = find_main_function(filename, header, is_64bit, base_address);
         fprintf(stdout, "\nMain Function:\n");
         if (main_addr) {
@@ -126,18 +134,19 @@ int main(int argc, char* argv[]) {
         
         fprintf(stdout, "\n────────────────────────────────────────\n");
         fprintf(stdout, "Test completed successfully!\n");
+        log_info("Test completed successfully");
         
     cleanup:
-        // 释放资源
         if (base_address && header) {
             unmap_macho_segments(base_address, header, is_64bit);
         } else if (header) {
             free(header);
         }
         
-        // 清理各个子系统
         dyld_cleanup();
         vfs_cleanup();
+        log_cleanup();
+        config_cleanup();
         return 0;
     }
     
@@ -145,20 +154,27 @@ int main(int argc, char* argv[]) {
         if (argc < 3) {
             fprintf(stderr, "Error: App bundle path required\n\n");
             print_usage(argv[0]);
+            log_cleanup();
+            config_cleanup();
             return 1;
         }
         
         const char* app_path = argv[2];
+        log_info("Loading application bundle: %s", app_path);
         fprintf(stdout, "Loading application bundle: %s\n", app_path);
         
         app_bundle* bundle = app_bundle_parse(app_path);
         if (!bundle) {
-            fprintf(stderr, "Error: Failed to parse app bundle\n");
+            log_error("Failed to parse app bundle");
+            log_cleanup();
+            config_cleanup();
             return 1;
         }
         
         int result = app_bundle_launch(bundle, argc - 3, argv + 3);
         app_bundle_free(bundle);
+        log_cleanup();
+        config_cleanup();
         return result;
     }
     
@@ -166,29 +182,41 @@ int main(int argc, char* argv[]) {
         if (argc < 3) {
             fprintf(stderr, "Error: App bundle path required\n\n");
             print_usage(argv[0]);
+            log_cleanup();
+            config_cleanup();
             return 1;
         }
         
         const char* app_path = argv[2];
+        log_info("Installing application: %s", app_path);
         
         if (!app_manager_init(NULL)) {
-            fprintf(stderr, "Error: Failed to initialize app manager\n");
+            log_error("Failed to initialize app manager");
+            log_cleanup();
+            config_cleanup();
             return 1;
         }
         
         bool success = app_bundle_install(app_path);
         app_manager_cleanup();
+        log_cleanup();
+        config_cleanup();
         return success ? 0 : 1;
     }
     
     if (strcmp(command, "list") == 0) {
         if (!app_manager_init(NULL)) {
-            fprintf(stderr, "Error: Failed to initialize app manager\n");
+            log_error("Failed to initialize app manager");
+            log_cleanup();
+            config_cleanup();
             return 1;
         }
         
+        log_info("Listing installed applications");
         app_bundle_list_installed();
         app_manager_cleanup();
+        log_cleanup();
+        config_cleanup();
         return 0;
     }
     
@@ -196,22 +224,32 @@ int main(int argc, char* argv[]) {
         if (argc < 3) {
             fprintf(stderr, "Error: Bundle ID required\n\n");
             print_usage(argv[0]);
+            log_cleanup();
+            config_cleanup();
             return 1;
         }
         
         const char* bundle_id = argv[2];
+        log_info("Uninstalling application: %s", bundle_id);
         
         if (!app_manager_init(NULL)) {
-            fprintf(stderr, "Error: Failed to initialize app manager\n");
+            log_error("Failed to initialize app manager");
+            log_cleanup();
+            config_cleanup();
             return 1;
         }
         
         bool success = app_bundle_uninstall(bundle_id);
         app_manager_cleanup();
+        log_cleanup();
+        config_cleanup();
         return success ? 0 : 1;
     }
     
+    log_error("Unknown command: %s", command);
     fprintf(stderr, "Error: Unknown command: %s\n\n", command);
     print_usage(argv[0]);
+    log_cleanup();
+    config_cleanup();
     return 1;
 }
