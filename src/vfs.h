@@ -4,7 +4,7 @@
 #include "platform.h"
 
 // 虚拟文件系统结构
-typedef struct {
+typedef struct vfs_entry {
     char* virtual_path;   // 虚拟路径（如 /usr/lib/libSystem.dylib）
     char* physical_path;  // 物理路径（如 C:\WinDarling\lib\libSystem.dylib）
     struct vfs_entry* next;

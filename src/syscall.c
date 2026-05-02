@@ -148,7 +148,7 @@ int sys_close(int fd) {
     }
     
     platform_close(fd_map[fd]);
-    fd_map[fd] = NULL;
+    fd_map[fd] = 0;
     return 0;
 }
 

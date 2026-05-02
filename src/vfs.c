@@ -78,31 +78,33 @@ static vfs_entry* vfs_root = NULL;
 // 初始化虚拟文件系统
 void vfs_init(void) {
     // 创建默认的路径映射
-    char current_path[256];
-    getcwd(current_path, sizeof(current_path));
-    
-    // 创建默认的目录结构
-    char lib_path[256];
-    sprintf(lib_path, "%s/lib", current_path);
-    mkdir(lib_path, 0755);
-    
-    // 添加基本的路径映射
-    vfs_add_mapping("/usr/lib", lib_path);
-    vfs_add_mapping("/usr/local/lib", lib_path);
-    vfs_add_mapping("/Library/Frameworks", lib_path);
+    char current_path[1024];
+    if (getcwd(current_path, sizeof(current_path))) {
+        // 创建默认的目录结构
+        char lib_path[1024];
+        snprintf(lib_path, sizeof(lib_path), "%s/lib", current_path);
+        mkdir(lib_path, 0755);
+        
+        // 添加基本的路径映射
+        vfs_add_mapping("/usr/lib", lib_path);
+        vfs_add_mapping("/usr/local/lib", lib_path);
+        vfs_add_mapping("/Library/Frameworks", lib_path);
+    }
+    printf("VFS initialized\n");
 }
 
 // 关闭虚拟文件系统
 void vfs_cleanup(void) {
     vfs_entry* current = vfs_root;
     while (current) {
-        vfs_entry* next = current->next;
+        vfs_entry* next = (vfs_entry*)current->next;
         free(current->virtual_path);
         free(current->physical_path);
         free(current);
         current = next;
     }
     vfs_root = NULL;
+    printf("VFS cleanup complete\n");
 }
 
 // 添加虚拟路径映射
@@ -137,7 +139,7 @@ const char* vfs_resolve_path(const char* virtual_path) {
         size_t virt_len = strlen(current->virtual_path);
         if (strncmp(virtual_path, current->virtual_path, virt_len) == 0) {
             // 找到匹配的映射
-            static char resolved_path[256];
+            static char resolved_path[1024];
             const char* rest = virtual_path + virt_len;
             
             // 处理路径拼接
@@ -145,7 +147,7 @@ const char* vfs_resolve_path(const char* virtual_path) {
                 rest++;
             }
             
-            sprintf(resolved_path, "%s/%s", current->physical_path, rest);
+            snprintf(resolved_path, sizeof(resolved_path), "%s/%s", current->physical_path, rest);
             
             // 转换路径分隔符
             for (char* p = resolved_path; *p; p++) {
@@ -156,7 +158,7 @@ const char* vfs_resolve_path(const char* virtual_path) {
             
             return resolved_path;
         }
-        current = current->next;
+        current = (vfs_entry*)current->next;
     }
     
     // 没有找到映射，返回原路径
@@ -218,7 +220,7 @@ int vfs_mkdir(const char* virtual_path, int mode) {
         return -1;
     }
     
-    return mkdir(physical_path, mode) ? 0 : -1;
+    return mkdir(physical_path, mode) == 0 ? 0 : -1;
 }
 
 // 删除文件
@@ -228,7 +230,7 @@ int vfs_unlink(const char* virtual_path) {
         return -1;
     }
     
-    return unlink(physical_path) ? 0 : -1;
+    return unlink(physical_path) == 0 ? 0 : -1;
 }
 
 // 重命名文件
@@ -240,5 +242,5 @@ int vfs_rename(const char* old_path, const char* new_path) {
         return -1;
     }
     
-    return rename(old_physical, new_physical) ? 0 : -1;
+    return rename(old_physical, new_physical) == 0 ? 0 : -1;
 }
