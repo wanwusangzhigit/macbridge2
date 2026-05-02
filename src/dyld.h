@@ -4,7 +4,7 @@
 #include "platform.h"
 
 // 动态库结构
-typedef struct {
+typedef struct dyld_image {
     char* path;           // 库路径
     void* base_address;   // 加载基地址
     size_t size;          // 大小
@@ -12,7 +12,7 @@ typedef struct {
 } dyld_image;
 
 // 符号结构
-typedef struct {
+typedef struct dyld_symbol {
     char* name;           // 符号名称
     void* address;        // 符号地址
     struct dyld_symbol* next;

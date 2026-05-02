@@ -5,7 +5,13 @@
 
 // 文件描述符映射表
 static platform_handle fd_map[1024] = {0};
-static int next_fd = 3; // 0, 1, 2 分别对应 stdin, stdout, stderr
+static int next_fd = 3;
+
+// 系统调用统计
+static struct {
+    int total_calls;
+    int syscall_counts[256];
+} syscall_stats = {0};
 
 #ifdef _WIN32
     #include <Windows.h>
@@ -23,10 +29,7 @@ static int next_fd = 3; // 0, 1, 2 分别对应 stdin, stdout, stderr
     #define X_OK 1
     
     #define getpid() _getpid()
-    static int getppid(void) {
-        // Windows 平台简化实现，返回 0 作为父进程 ID
-        return 0;
-    }
+    static int getppid(void) { return 0; }
     #define getuid() 0
     #define geteuid() 0
     #define getgid() 0
@@ -37,6 +40,8 @@ static int next_fd = 3; // 0, 1, 2 分别对应 stdin, stdout, stderr
     #define unlink(path) _unlink(path)
     #define chmod(path, mode) _chmod(path, mode)
     #define chown(path, owner, group) 0
+    #define mkdir(path, mode) _mkdir(path)
+    #define rmdir(path) _rmdir(path)
     
     struct stat {
         off_t st_size;
@@ -83,18 +88,70 @@ static int next_fd = 3; // 0, 1, 2 分别对应 stdin, stdout, stderr
 // 系统调用表
 static syscall_handler_t syscall_table[256] = {0};
 
+// 获取系统调用名称
+const char* get_syscall_name(int syscall_num) {
+    switch (syscall_num) {
+        case 1: return "exit";
+        case 2: return "fork";
+        case 3: return "read";
+        case 4: return "write";
+        case 5: return "open";
+        case 6: return "close";
+        case 20: return "getpid";
+        case 24: return "getuid";
+        case 25: return "geteuid";
+        case 39: return "getppid";
+        case 47: return "mmap";
+        case 48: return "munmap";
+        case 74: return "mkdir";
+        case 75: return "rmdir";
+        case 96: return "ioctl";
+        case 197: return "mmap";
+        case 198: return "munmap";
+        case 199: return "msync";
+        case 200: return "mach_msg";
+        default: return "unknown";
+    }
+}
+
+// 打印系统调用统计
+void print_syscall_stats(void) {
+    printf("System Call Statistics:\n");
+    printf("Total calls: %d\n", syscall_stats.total_calls);
+    printf("\nTop 10 syscalls:\n");
+    
+    // 简单的气泡排序获取前10个
+    int indices[256];
+    for (int i = 0; i < 256; i++) indices[i] = i;
+    
+    for (int i = 0; i < 256 && i < 10; i++) {
+        for (int j = i + 1; j < 256; j++) {
+            if (syscall_stats.syscall_counts[indices[j]] > syscall_stats.syscall_counts[indices[i]]) {
+                int temp = indices[i];
+                indices[i] = indices[j];
+                indices[j] = temp;
+            }
+        }
+    }
+    
+    for (int i = 0; i < 10 && syscall_stats.syscall_counts[indices[i]] > 0; i++) {
+        printf("  %s: %d calls\n", get_syscall_name(indices[i]), syscall_stats.syscall_counts[indices[i]]);
+    }
+}
+
 // 初始化系统调用表
 void init_syscall_table(void) {
     // 初始化文件描述符映射
-    fd_map[0] = (platform_handle)0; // stdin
-    fd_map[1] = (platform_handle)0; // stdout
-    fd_map[2] = (platform_handle)0; // stderr
+    fd_map[0] = (platform_handle)0;
+    fd_map[1] = (platform_handle)0;
+    fd_map[2] = (platform_handle)0;
     
     // 注册 BSD 系统调用
-    syscall_table[SYS_open] = (syscall_handler_t)sys_open;
-    syscall_table[SYS_close] = (syscall_handler_t)sys_close;
+    syscall_table[SYS_exit] = (syscall_handler_t)sys_exit;
     syscall_table[SYS_read] = (syscall_handler_t)sys_read;
     syscall_table[SYS_write] = (syscall_handler_t)sys_write;
+    syscall_table[SYS_open] = (syscall_handler_t)sys_open;
+    syscall_table[SYS_close] = (syscall_handler_t)sys_close;
     syscall_table[SYS_lseek] = (syscall_handler_t)sys_lseek;
     syscall_table[SYS_stat] = (syscall_handler_t)sys_stat;
     syscall_table[SYS_fstat] = (syscall_handler_t)sys_fstat;
@@ -104,24 +161,69 @@ void init_syscall_table(void) {
     syscall_table[SYS_geteuid] = (syscall_handler_t)sys_geteuid;
     syscall_table[SYS_getgid] = (syscall_handler_t)sys_getgid;
     syscall_table[SYS_getegid] = (syscall_handler_t)sys_getegid;
+    syscall_table[SYS_access] = (syscall_handler_t)sys_access;
+    syscall_table[SYS_chmod] = (syscall_handler_t)sys_chmod;
+    syscall_table[SYS_chown] = (syscall_handler_t)sys_chown;
+    syscall_table[SYS_unlink] = (syscall_handler_t)sys_unlink;
+    syscall_table[SYS_rename] = (syscall_handler_t)sys_rename;
+    syscall_table[SYS_mkdir] = (syscall_handler_t)sys_mkdir;
+    syscall_table[SYS_rmdir] = (syscall_handler_t)sys_rmdir;
     syscall_table[SYS_brk] = (syscall_handler_t)sys_brk;
     syscall_table[SYS_mmap] = (syscall_handler_t)sys_mmap;
     syscall_table[SYS_munmap] = (syscall_handler_t)sys_munmap;
+    syscall_table[SYS_ioctl] = (syscall_handler_t)sys_ioctl;
     
     // 注册 Mach 系统调用
     syscall_table[SYS_mach_msg] = (syscall_handler_t)sys_mach_msg;
     syscall_table[SYS_thread_self] = (syscall_handler_t)sys_thread_self;
     syscall_table[SYS_task_self] = (syscall_handler_t)sys_task_self;
+    
+    printf("System call table initialized with %d handlers\n", 30);
 }
 
 // 处理系统调用
 int handle_syscall(int syscall_num, uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6) {
+    syscall_stats.total_calls++;
+    if (syscall_num >= 0 && syscall_num < 256) {
+        syscall_stats.syscall_counts[syscall_num]++;
+    }
+    
     if (syscall_num < 0 || syscall_num >= 256 || !syscall_table[syscall_num]) {
-        printf("Error: Unknown syscall %d\n", syscall_num);
+        printf("Warning: Unknown syscall %d (%s)\n", syscall_num, get_syscall_name(syscall_num));
         return -1;
     }
     
     return syscall_table[syscall_num](arg1, arg2, arg3, arg4, arg5, arg6);
+}
+
+// 进程控制
+int sys_exit(int status) {
+    printf("Process exiting with status: %d\n", status);
+    return 0;
+}
+
+int sys_getpid(void) {
+    return (int)getpid();
+}
+
+int sys_getppid(void) {
+    return (int)getppid();
+}
+
+int sys_getuid(void) {
+    return (int)getuid();
+}
+
+int sys_geteuid(void) {
+    return (int)geteuid();
+}
+
+int sys_getgid(void) {
+    return (int)getgid();
+}
+
+int sys_getegid(void) {
+    return (int)getegid();
 }
 
 // 打开文件
@@ -131,7 +233,6 @@ int sys_open(const char* path, int flags, int mode) {
         return -1;
     }
     
-    // 分配文件描述符
     if (next_fd >= 1024) {
         platform_close(handle);
         return -1;
@@ -148,7 +249,7 @@ int sys_close(int fd) {
     }
     
     platform_close(fd_map[fd]);
-    fd_map[fd] = NULL;
+    fd_map[fd] = 0;
     return 0;
 }
 
@@ -176,7 +277,6 @@ off_t sys_lseek(int fd, off_t offset, int whence) {
         return -1;
     }
     
-    // 简化实现
     return lseek(fd, offset, whence);
 }
 
@@ -194,34 +294,49 @@ int sys_fstat(int fd, struct stat* buf) {
     return fstat(fd, buf);
 }
 
-// 获取进程 ID
-pid_t sys_getpid(void) {
-    return getpid();
+// 文件访问权限
+int sys_access(const char* path, int mode) {
+    return access(path, mode);
 }
 
-// 获取父进程 ID
-pid_t sys_getppid(void) {
-    return getppid();
+// 修改文件权限
+int sys_chmod(const char* path, mode_t mode) {
+    return chmod(path, mode);
 }
 
-// 获取用户 ID
-uid_t sys_getuid(void) {
-    return getuid();
+// 修改文件所有者
+int sys_chown(const char* path, uid_t owner, gid_t group) {
+    return chown(path, owner, group);
 }
 
-// 获取有效用户 ID
-uid_t sys_geteuid(void) {
-    return geteuid();
+// 修改文件描述符权限
+int sys_fchmod(int fd, mode_t mode) {
+    return 0; // 简化实现
 }
 
-// 获取组 ID
-gid_t sys_getgid(void) {
-    return getgid();
+// 修改文件描述符所有者
+int sys_fchown(int fd, uid_t owner, gid_t group) {
+    return 0; // 简化实现
 }
 
-// 获取有效组 ID
-gid_t sys_getegid(void) {
-    return getegid();
+// 删除文件
+int sys_unlink(const char* path) {
+    return unlink(path);
+}
+
+// 重命名文件
+int sys_rename(const char* oldpath, const char* newpath) {
+    return rename(oldpath, newpath);
+}
+
+// 创建目录
+int sys_mkdir(const char* path, mode_t mode) {
+    return mkdir(path, mode);
+}
+
+// 删除目录
+int sys_rmdir(const char* path) {
+    return rmdir(path);
 }
 
 // 内存分配
@@ -268,35 +383,97 @@ int sys_munmap(void* addr, size_t length) {
     return platform_munmap(addr, length);
 }
 
+// 内存保护
+int sys_mprotect(void* addr, size_t len, int prot) {
+    return 0; // 简化实现
+}
+
+// 同步内存
+int sys_msync(void* addr, size_t len, int flags) {
+    return 0; // 简化实现
+}
+
 // IO 控制
 int sys_ioctl(int fd, unsigned long request, void* arg) {
-    // 简化实现
+    return 0; // 简化实现
+}
+
+// 文件描述符操作
+int sys_dup(int oldfd) {
+    if (oldfd < 0 || oldfd >= 1024 || !fd_map[oldfd]) {
+        return -1;
+    }
+    
+    if (next_fd >= 1024) {
+        return -1;
+    }
+    
+    fd_map[next_fd] = fd_map[oldfd];
+    return next_fd++;
+}
+
+int sys_dup2(int oldfd, int newfd) {
+    if (oldfd < 0 || oldfd >= 1024 || !fd_map[oldfd]) {
+        return -1;
+    }
+    
+    if (newfd < 0 || newfd >= 1024) {
+        return -1;
+    }
+    
+    if (fd_map[newfd]) {
+        platform_close(fd_map[newfd]);
+    }
+    
+    fd_map[newfd] = fd_map[oldfd];
+    return newfd;
+}
+
+// 时间相关
+int sys_gettimeofday(void* tv, void* tz) {
+    return 0; // 简化实现
+}
+
+int sys_settimeofday(void* tv, void* tz) {
+    return 0; // 简化实现
+}
+
+// 网络操作 (简化实现)
+int sys_socket(int domain, int type, int protocol) {
+    printf("syscall: socket(domain=%d, type=%d, protocol=%d)\n", domain, type, protocol);
+    return -1; // 暂时不支持
+}
+
+int sys_connect(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
+    printf("syscall: connect(sockfd=%d, ...)\n", sockfd);
+    return -1;
+}
+
+int sys_accept(int sockfd, struct sockaddr* addr, socklen_t* addrlen) {
+    printf("syscall: accept(sockfd=%d, ...)\n", sockfd);
+    return -1;
+}
+
+int sys_bind(int sockfd, const struct sockaddr* addr, socklen_t addrlen) {
+    printf("syscall: bind(sockfd=%d, ...)\n", sockfd);
+    return -1;
+}
+
+int sys_listen(int sockfd, int backlog) {
+    printf("syscall: listen(sockfd=%d, backlog=%d)\n", sockfd, backlog);
+    return -1;
+}
+
+int sys_setsockopt(int sockfd, int level, int optname, const void* optval, socklen_t optlen) {
     return 0;
 }
 
-// 文件访问权限
-int sys_access(const char* path, int mode) {
-    return access(path, mode);
+int sys_getsockopt(int sockfd, int level, int optname, void* optval, socklen_t* optlen) {
+    return 0;
 }
 
-// 修改文件权限
-int sys_chmod(const char* path, mode_t mode) {
-    return chmod(path, mode);
-}
-
-// 修改文件所有者
-int sys_chown(const char* path, uid_t owner, gid_t group) {
-    return chown(path, owner, group);
-}
-
-// 重命名文件
-int sys_rename(const char* oldpath, const char* newpath) {
-    return rename(oldpath, newpath);
-}
-
-// 删除文件
-int sys_unlink(const char* path) {
-    return unlink(path);
+int sys_shutdown(int sockfd, int how) {
+    return 0;
 }
 
 // Mach 消息
