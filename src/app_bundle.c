@@ -26,14 +26,19 @@ static void info_plist_entry_free(info_plist_entry* entry) {
 }
 
 static bool create_directory_recursive(const char* path) {
-    char tmp[1024];
+    char tmp[4096];
     char* p = NULL;
     size_t len;
+    
+    if (strlen(path) >= sizeof(tmp)) {
+        fprintf(stderr, "Path too long: %s\n", path);
+        return false;
+    }
     
     snprintf(tmp, sizeof(tmp), "%s", path);
     len = strlen(tmp);
     
-    if (tmp[len - 1] == '/') {
+    if (len > 0 && tmp[len - 1] == '/') {
         tmp[len - 1] = 0;
     }
     
@@ -106,11 +111,20 @@ static bool copy_directory_recursive(const char* src_dir, const char* dst_dir) {
             continue;
         }
         
-        char src_path[1024];
-        char dst_path[1024];
+        char src_path[4096];
+        char dst_path[4096];
         
-        snprintf(src_path, sizeof(src_path), "%s/%s", src_dir, entry->d_name);
-        snprintf(dst_path, sizeof(dst_path), "%s/%s", dst_dir, entry->d_name);
+        if (snprintf(src_path, sizeof(src_path), "%s/%s", src_dir, entry->d_name) >= (int)sizeof(src_path)) {
+            fprintf(stderr, "Source path too long: %s/%s\n", src_dir, entry->d_name);
+            success = false;
+            break;
+        }
+        
+        if (snprintf(dst_path, sizeof(dst_path), "%s/%s", dst_dir, entry->d_name) >= (int)sizeof(dst_path)) {
+            fprintf(stderr, "Destination path too long: %s/%s\n", dst_dir, entry->d_name);
+            success = false;
+            break;
+        }
         
         struct stat st;
         if (stat(src_path, &st) == 0) {
