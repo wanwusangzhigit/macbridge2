@@ -56,13 +56,17 @@ typedef uint32_t task_t;
 #define SYS_task_self          202
 #define SYS_host_self          203
 
-// 套接字地址结构 (简化)
+// 套接字地址结构 (简化，Windows上使用Winsock的定义)
+#ifndef _WIN32
 struct sockaddr {
     uint16_t sa_family;
     char     sa_data[14];
 };
+#endif
 
+#ifndef socklen_t
 typedef uint32_t socklen_t;
+#endif
 
 // 系统调用处理函数
 typedef int (*syscall_handler_t)(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6);
