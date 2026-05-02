@@ -1,4 +1,7 @@
-#include "syscall.h"
+
+#!/usr/bin/env python3
+
+syscall_content = r'''#include "syscall.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -491,3 +494,9 @@ thread_t sys_thread_self(void) {
 task_t sys_task_self(void) {
     return (task_t)getpid();
 }
+''';
+
+with open('/workspace/src/syscall.c', 'w') as f:
+    f.write(syscall_content)
+
+print("Fixed syscall.c with corrected function types!")
