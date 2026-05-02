@@ -1,16 +1,14 @@
-
-&lt;?xml version="1.0" encoding="UTF-8"?&gt;
-&lt;!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"&gt;
-&lt;plist version="1.0"&gt;
-&lt;dict&gt;
-    &lt;key&gt;CFBundleExecutable&lt;/key&gt;&lt;string&gt;TestApp&lt;/string&gt;
-    &lt;key&gt;CFBundleIdentifier&lt;/key&gt;&lt;string&gt;com.example.TestApp&lt;/string&gt;
-    &lt;key&gt;CFBundleName&lt;/key&gt;&lt;string&gt;Test Application&lt;/string&gt;
-    &lt;key&gt;CFBundleShortVersionString&lt;/key&gt;&lt;string&gt;1.0.0&lt;/string&gt;
-    &lt;key&gt;CFBundleVersion&lt;/key&gt;&lt;string&gt;1&lt;/string&gt;
-    &lt;key&gt;CFBundleIconFile&lt;/key&gt;&lt;string&gt;AppIcon&lt;/string&gt;
-    &lt;key&gt;LSMinimumSystemVersion&lt;/key&gt;&lt;string&gt;10.15&lt;/string&gt;
-    &lt;key&gt;NSHighResolutionCapable&lt;/key&gt;&lt;true/&gt;
-&lt;/dict&gt;
-&lt;/plist&gt;
-
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key><string>TestApp</string>
+    <key>CFBundleIdentifier</key><string>com.example.TestApp</string>
+    <key>CFBundleName</key><string>Test Application</string>
+    <key>CFBundleShortVersionString</key><string>1.0.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>LSMinimumSystemVersion</key><string>10.15</string>
+    <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
