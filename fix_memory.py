@@ -1,4 +1,7 @@
 
+#!/usr/bin/env python3
+
+app_bundle_content = r'''
 #include "app_bundle.h"
 #include "platform.h"
 #include "macho.h"
@@ -538,3 +541,9 @@ bool extract_plist_key_value(const char* plist_content, const char* key, char* v
     
     return true;
 }
+'''
+
+with open('/workspace/src/app_bundle.c', 'w') as f:
+    f.write(app_bundle_content)
+
+print("Fixed memory management in app_bundle.c!")
