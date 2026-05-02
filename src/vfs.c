@@ -78,10 +78,10 @@ static vfs_entry* vfs_root = NULL;
 // 初始化虚拟文件系统
 void vfs_init(void) {
     // 创建默认的路径映射
-    char current_path[1024];
+    char current_path[4096];
     if (getcwd(current_path, sizeof(current_path))) {
         // 创建默认的目录结构
-        char lib_path[1024];
+        char lib_path[4100];
         snprintf(lib_path, sizeof(lib_path), "%s/lib", current_path);
         mkdir(lib_path, 0755);
         
