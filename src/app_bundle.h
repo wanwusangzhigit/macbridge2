@@ -37,6 +37,8 @@ typedef struct {
 
 bool app_manager_init(const char* install_dir);
 void app_manager_cleanup(void);
+bool app_manager_save(void);
+bool app_manager_load(void);
 app_bundle* app_bundle_parse(const char* bundle_path);
 void app_bundle_free(app_bundle* bundle);
 const char* app_bundle_get_info_value(const app_bundle* bundle, const char* key);
