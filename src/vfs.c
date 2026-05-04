@@ -78,10 +78,10 @@ static vfs_entry* vfs_root = NULL;
 // 初始化虚拟文件系统
 void vfs_init(void) {
     // 创建默认的路径映射
-    char current_path[1024];
+    char current_path[4096];
     if (getcwd(current_path, sizeof(current_path))) {
         // 创建默认的目录结构
-        char lib_path[1024];
+        char lib_path[4100];
         snprintf(lib_path, sizeof(lib_path), "%s/lib", current_path);
         mkdir(lib_path, 0755);
         
@@ -139,7 +139,7 @@ const char* vfs_resolve_path(const char* virtual_path) {
         size_t virt_len = strlen(current->virtual_path);
         if (strncmp(virtual_path, current->virtual_path, virt_len) == 0) {
             // 找到匹配的映射
-            static char resolved_path[1024];
+            static char resolved_path[4096];
             const char* rest = virtual_path + virt_len;
             
             // 处理路径拼接
@@ -147,7 +147,10 @@ const char* vfs_resolve_path(const char* virtual_path) {
                 rest++;
             }
             
-            snprintf(resolved_path, sizeof(resolved_path), "%s/%s", current->physical_path, rest);
+            if (snprintf(resolved_path, sizeof(resolved_path), "%s/%s", current->physical_path, rest) >= (int)sizeof(resolved_path)) {
+                fprintf(stderr, "Resolved path too long: %s/%s\n", current->physical_path, rest);
+                return NULL;
+            }
             
             // 转换路径分隔符
             for (char* p = resolved_path; *p; p++) {

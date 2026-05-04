@@ -111,3 +111,63 @@ const char* platform_resolve_path(const char* path) {
     // 简化实现，直接返回原路径
     return path;
 }
+
+#ifdef _WIN32
+// Windows 目录操作实现
+DIR* opendir(const char* name) {
+    if (!name) return NULL;
+    
+    DIR* dir = (DIR*)malloc(sizeof(DIR));
+    if (!dir) return NULL;
+    
+    memset(dir, 0, sizeof(DIR));
+    
+    char search_path[MAX_PATH];
+    snprintf(search_path, sizeof(search_path), "%s\\*", name);
+    
+    dir->hFind = FindFirstFileA(search_path, &dir->FindData);
+    if (dir->hFind == INVALID_HANDLE_VALUE) {
+        free(dir);
+        return NULL;
+    }
+    
+    strncpy(dir->entry_name, dir->FindData.cFileName, MAX_PATH - 1);
+    dir->entry_name[MAX_PATH - 1] = '\0';
+    
+    return dir;
+}
+
+struct dirent* readdir(DIR* dirp) {
+    if (!dirp) return NULL;
+    
+    static struct dirent entry;
+    
+    if (dirp->entry_name[0] != '\0') {
+        strncpy(entry.d_name, dirp->entry_name, MAX_PATH - 1);
+        entry.d_name[MAX_PATH - 1] = '\0';
+        dirp->entry_name[0] = '\0';
+        
+        if (FindNextFileA(dirp->hFind, &dirp->FindData)) {
+            strncpy(dirp->entry_name, dirp->FindData.cFileName, MAX_PATH - 1);
+            dirp->entry_name[MAX_PATH - 1] = '\0';
+        } else {
+            dirp->entry_name[0] = '\0';
+        }
+        
+        return &entry;
+    }
+    
+    return NULL;
+}
+
+int closedir(DIR* dirp) {
+    if (!dirp) return -1;
+    
+    if (dirp->hFind != INVALID_HANDLE_VALUE) {
+        FindClose(dirp->hFind);
+    }
+    
+    free(dirp);
+    return 0;
+}
+#endif

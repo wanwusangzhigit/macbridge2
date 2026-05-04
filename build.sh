@@ -8,7 +8,7 @@ if [ ! -d "$BIN_DIR" ]; then
 fi
 
 echo "Building test_loader..."
-gcc -Wall -O2 -I"$SRC_DIR" "$SRC_DIR/macho.c" "$SRC_DIR/syscall.c" "$SRC_DIR/vfs.c" "$SRC_DIR/dyld.c" "$SRC_DIR/platform.c" "$SRC_DIR/test_loader.c" -o "$BIN_DIR/test_loader" -lpthread
+gcc -Wall -O2 -I"$SRC_DIR" "$SRC_DIR/macho.c" "$SRC_DIR/syscall.c" "$SRC_DIR/vfs.c" "$SRC_DIR/dyld.c" "$SRC_DIR/platform.c" "$SRC_DIR/util.c" "$SRC_DIR/test_loader.c" -o "$BIN_DIR/test_loader" -lpthread
 
 if [ $? -eq 0 ]; then
     echo "Test loader build successful!"
@@ -18,7 +18,7 @@ fi
 
 echo
 echo "Building app_loader..."
-gcc -Wall -O2 -I"$SRC_DIR" "$SRC_DIR/macho.c" "$SRC_DIR/syscall.c" "$SRC_DIR/vfs.c" "$SRC_DIR/dyld.c" "$SRC_DIR/platform.c" "$SRC_DIR/app_bundle.c" "$SRC_DIR/app_loader.c" -o "$BIN_DIR/app_loader" -lpthread
+gcc -Wall -O2 -I"$SRC_DIR" "$SRC_DIR/macho.c" "$SRC_DIR/syscall.c" "$SRC_DIR/vfs.c" "$SRC_DIR/dyld.c" "$SRC_DIR/platform.c" "$SRC_DIR/app_bundle.c" "$SRC_DIR/util.c" "$SRC_DIR/app_loader.c" -o "$BIN_DIR/app_loader" -lpthread
 
 if [ $? -eq 0 ]; then
     echo

@@ -15,6 +15,20 @@
     typedef int gid_t;
     typedef int mode_t;
     
+    typedef struct _WIN32_DIR {
+        HANDLE hFind;
+        WIN32_FIND_DATA FindData;
+        char entry_name[MAX_PATH];
+    } DIR;
+    
+    struct dirent {
+        char d_name[MAX_PATH];
+    };
+    
+    DIR* opendir(const char* name);
+    struct dirent* readdir(DIR* dirp);
+    int closedir(DIR* dirp);
+    
     #define PROT_READ  0x1
     #define PROT_WRITE 0x2
     #define PROT_EXEC  0x4
@@ -29,6 +43,7 @@
     #include <sys/mman.h>
     #include <unistd.h>
     #include <fcntl.h>
+    #include <dirent.h>
     typedef int platform_handle;
     typedef size_t platform_size_t;
 #endif

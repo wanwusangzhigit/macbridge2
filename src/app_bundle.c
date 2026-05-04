@@ -26,14 +26,19 @@ static void info_plist_entry_free(info_plist_entry* entry) {
 }
 
 static bool create_directory_recursive(const char* path) {
-    char tmp[1024];
+    char tmp[4096];
     char* p = NULL;
     size_t len;
+    
+    if (strlen(path) >= sizeof(tmp)) {
+        fprintf(stderr, "Path too long: %s\n", path);
+        return false;
+    }
     
     snprintf(tmp, sizeof(tmp), "%s", path);
     len = strlen(tmp);
     
-    if (tmp[len - 1] == '/') {
+    if (len > 0 && tmp[len - 1] == '/') {
         tmp[len - 1] = 0;
     }
     
@@ -106,11 +111,20 @@ static bool copy_directory_recursive(const char* src_dir, const char* dst_dir) {
             continue;
         }
         
-        char src_path[1024];
-        char dst_path[1024];
+        char src_path[4096];
+        char dst_path[4096];
         
-        snprintf(src_path, sizeof(src_path), "%s/%s", src_dir, entry->d_name);
-        snprintf(dst_path, sizeof(dst_path), "%s/%s", dst_dir, entry->d_name);
+        if (snprintf(src_path, sizeof(src_path), "%s/%s", src_dir, entry->d_name) >= (int)sizeof(src_path)) {
+            fprintf(stderr, "Source path too long: %s/%s\n", src_dir, entry->d_name);
+            success = false;
+            break;
+        }
+        
+        if (snprintf(dst_path, sizeof(dst_path), "%s/%s", dst_dir, entry->d_name) >= (int)sizeof(dst_path)) {
+            fprintf(stderr, "Destination path too long: %s/%s\n", dst_dir, entry->d_name);
+            success = false;
+            break;
+        }
         
         struct stat st;
         if (stat(src_path, &st) == 0) {
@@ -249,7 +263,10 @@ bool app_manager_load(void) {
         if (name_len > 0) {
             bundle->bundle_name = (char*)malloc(name_len);
             if (bundle->bundle_name) {
-                fread(bundle->bundle_name, sizeof(char), name_len, file);
+                if (fread(bundle->bundle_name, sizeof(char), name_len, file) != name_len) {
+                    free(bundle->bundle_name);
+                    bundle->bundle_name = NULL;
+                }
             }
         }
         
@@ -258,7 +275,10 @@ bool app_manager_load(void) {
         if (version_len > 0) {
             bundle->bundle_version = (char*)malloc(version_len);
             if (bundle->bundle_version) {
-                fread(bundle->bundle_version, sizeof(char), version_len, file);
+                if (fread(bundle->bundle_version, sizeof(char), version_len, file) != version_len) {
+                    free(bundle->bundle_version);
+                    bundle->bundle_version = NULL;
+                }
             }
         }
         
@@ -267,7 +287,10 @@ bool app_manager_load(void) {
         if (sys_ver_len > 0) {
             bundle->minimum_system_version = (char*)malloc(sys_ver_len);
             if (bundle->minimum_system_version) {
-                fread(bundle->minimum_system_version, sizeof(char), sys_ver_len, file);
+                if (fread(bundle->minimum_system_version, sizeof(char), sys_ver_len, file) != sys_ver_len) {
+                    free(bundle->minimum_system_version);
+                    bundle->minimum_system_version = NULL;
+                }
             }
         }
         
@@ -276,7 +299,10 @@ bool app_manager_load(void) {
         if (icon_len > 0) {
             bundle->icon_file = (char*)malloc(icon_len);
             if (bundle->icon_file) {
-                fread(bundle->icon_file, sizeof(char), icon_len, file);
+                if (fread(bundle->icon_file, sizeof(char), icon_len, file) != icon_len) {
+                    free(bundle->icon_file);
+                    bundle->icon_file = NULL;
+                }
             }
         }
         
@@ -422,7 +448,7 @@ bool app_bundle_install(const char* source_path) {
     if (!bundle_name) bundle_name = source_path;
     else bundle_name++;
     
-    char dest_path[MAX_BUNDLE_PATH];
+    char dest_path[MAX_BUNDLE_PATH * 2];
     snprintf(dest_path, sizeof(dest_path), "%s/%s", 
              g_app_manager->install_directory, bundle_name);
     
@@ -478,6 +504,7 @@ bool app_bundle_uninstall(const char* bundle_id) {
     
     char app_path[MAX_BUNDLE_PATH];
     strncpy(app_path, g_app_manager->bundles[index].bundle_path, MAX_BUNDLE_PATH - 1);
+    app_path[MAX_BUNDLE_PATH - 1] = '\0';
     
     char rm_cmd[1024];
     snprintf(rm_cmd, sizeof(rm_cmd), "rm -rf \"%s\"", app_path);
@@ -561,7 +588,7 @@ int app_bundle_launch(const app_bundle* bundle, int argc, char* argv[]) {
         return -1;
     }
     
-    char exe_path[MAX_BUNDLE_PATH];
+    char exe_path[MAX_BUNDLE_PATH * 2];
     app_bundle_get_executable_path(bundle, exe_path, sizeof(exe_path));
     
     const char* name = bundle->bundle_name ? bundle->bundle_name : "Unknown";
@@ -653,10 +680,12 @@ bool parse_info_plist(const char* plist_path, app_bundle* bundle) {
     
     if (extract_plist_key_value(content, "CFBundleExecutable", buffer, sizeof(buffer))) {
         strncpy(bundle->executable_name, buffer, MAX_EXECUTABLE_NAME - 1);
+        bundle->executable_name[MAX_EXECUTABLE_NAME - 1] = '\0';
     }
     
     if (extract_plist_key_value(content, "CFBundleIdentifier", buffer, sizeof(buffer))) {
         strncpy(bundle->bundle_identifier, buffer, MAX_BUNDLE_ID - 1);
+        bundle->bundle_identifier[MAX_BUNDLE_ID - 1] = '\0';
     }
     
     if (extract_plist_key_value(content, "CFBundleName", buffer, sizeof(buffer))) {
