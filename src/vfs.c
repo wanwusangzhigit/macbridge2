@@ -4,12 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifndef _WIN32
-    #include <unistd.h>
-    #include <dirent.h>
-    #include <sys/stat.h>
-#endif
-
 // 虚拟文件系统根节点
 static vfs_entry* vfs_root = NULL;
 

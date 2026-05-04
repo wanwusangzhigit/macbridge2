@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <errno.h>
 
 static app_manager* g_app_manager = NULL;
@@ -612,7 +611,7 @@ void app_bundle_list_installed(void) {
     }
     
     fprintf(stdout, "────────────────────────────────────────\n");
-    fprintf(stdout, "Total: %d application(s)\n\n", g_app_manager->num_bundles);
+    fprintf(stdout, "Total: %zu application(s)\n\n", g_app_manager->num_bundles);
 }
 
 int app_bundle_launch(const app_bundle* bundle, int argc, char* argv[]) {
