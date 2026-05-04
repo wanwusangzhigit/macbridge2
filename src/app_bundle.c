@@ -1,6 +1,5 @@
 #include "app_bundle.h"
 #include "platform.h"
-#include "macho.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,7 +22,7 @@ static void info_plist_entry_free(info_plist_entry* entry) {
     free(entry);
 }
 
-static bool extract_plist_key_value(const char* content, const char* key, char* value, size_t value_size) {
+bool extract_plist_key_value(const char* content, const char* key, char* value, size_t value_size) {
     if (!content || !key || !value) return false;
     
     char pattern[256];
@@ -48,7 +47,7 @@ static bool extract_plist_key_value(const char* content, const char* key, char* 
     return true;
 }
 
-static bool parse_info_plist(const char* plist_path, app_bundle* bundle) {
+bool parse_info_plist(const char* plist_path, app_bundle* bundle) {
     if (!plist_path || !bundle) return false;
     
     FILE* file = fopen(plist_path, "r");
@@ -81,23 +80,37 @@ static bool parse_info_plist(const char* plist_path, app_bundle* bundle) {
     }
     
     if (extract_plist_key_value(content, "CFBundleName", buffer, sizeof(buffer))) {
-        bundle->bundle_name = strdup(buffer);
+        bundle->bundle_name = strdup_safe(buffer);
     }
     
     if (extract_plist_key_value(content, "CFBundleVersion", buffer, sizeof(buffer))) {
-        bundle->bundle_version = strdup(buffer);
+        bundle->bundle_version = strdup_safe(buffer);
     }
     
     if (extract_plist_key_value(content, "LSMinimumSystemVersion", buffer, sizeof(buffer))) {
-        bundle->minimum_system_version = strdup(buffer);
+        bundle->minimum_system_version = strdup_safe(buffer);
     }
     
     if (extract_plist_key_value(content, "CFBundleIconFile", buffer, sizeof(buffer))) {
-        bundle->icon_file = strdup(buffer);
+        bundle->icon_file = strdup_safe(buffer);
     }
     
     free(content);
     return true;
+}
+
+bool is_valid_app_bundle(const char* path) {
+    if (!path) return false;
+    
+    char plist_path[MAX_BUNDLE_PATH];
+    snprintf(plist_path, sizeof(plist_path), "%s/Contents/Info.plist", path);
+    
+    FILE* file = fopen(plist_path, "r");
+    if (file) {
+        fclose(file);
+        return true;
+    }
+    return false;
 }
 
 static bool create_directory_recursive(const char* path) {
@@ -251,143 +264,18 @@ static bool remove_directory_recursive(const char* path) {
     return success;
 }
 
-static bool app_bundle_save_to_file(const app_bundle* bundle, const char* file_path) {
-    FILE* file = fopen(file_path, "wb");
-    if (!file) {
-        fprintf(stderr, "Failed to open file for writing: %s\n", file_path);
-        return false;
-    }
-    
-    if (fwrite(bundle->bundle_identifier, 1, strlen(bundle->bundle_identifier) + 1, file) != strlen(bundle->bundle_identifier) + 1) {
-        fclose(file);
-        return false;
-    }
-    
-    if (fwrite(bundle->bundle_path, 1, strlen(bundle->bundle_path) + 1, file) != strlen(bundle->bundle_path) + 1) {
-        fclose(file);
-        return false;
-    }
-    
-    size_t name_len = bundle->bundle_name ? strlen(bundle->bundle_name) + 1 : 1;
-    if (fwrite(&name_len, sizeof(size_t), 1, file) != 1) { fclose(file); return false; }
-    if (bundle->bundle_name) {
-        if (fwrite(bundle->bundle_name, sizeof(char), name_len, file) != name_len) { fclose(file); return false; }
-    } else {
-        char null_char = '\0';
-        if (fwrite(&null_char, sizeof(char), 1, file) != 1) { fclose(file); return false; }
-    }
-    
-    size_t version_len = bundle->bundle_version ? strlen(bundle->bundle_version) + 1 : 1;
-    if (fwrite(&version_len, sizeof(size_t), 1, file) != 1) { fclose(file); return false; }
-    if (bundle->bundle_version) {
-        if (fwrite(bundle->bundle_version, sizeof(char), version_len, file) != version_len) { fclose(file); return false; }
-    } else {
-        char null_char = '\0';
-        if (fwrite(&null_char, sizeof(char), 1, file) != 1) { fclose(file); return false; }
-    }
-    
-    size_t sys_ver_len = bundle->minimum_system_version ? strlen(bundle->minimum_system_version) + 1 : 1;
-    if (fwrite(&sys_ver_len, sizeof(size_t), 1, file) != 1) { fclose(file); return false; }
-    if (bundle->minimum_system_version) {
-        if (fwrite(bundle->minimum_system_version, sizeof(char), sys_ver_len, file) != sys_ver_len) { fclose(file); return false; }
-    } else {
-        char null_char = '\0';
-        if (fwrite(&null_char, sizeof(char), 1, file) != 1) { fclose(file); return false; }
-    }
-    
-    size_t icon_len = bundle->icon_file ? strlen(bundle->icon_file) + 1 : 1;
-    if (fwrite(&icon_len, sizeof(size_t), 1, file) != 1) { fclose(file); return false; }
-    if (bundle->icon_file) {
-        if (fwrite(bundle->icon_file, sizeof(char), icon_len, file) != icon_len) { fclose(file); return false; }
-    } else {
-        char null_char = '\0';
-        if (fwrite(&null_char, sizeof(char), 1, file) != 1) { fclose(file); return false; }
-    }
-    
-    fclose(file);
-    return true;
-}
-
-static bool app_bundle_load_from_file(const char* file_path, app_bundle* bundle) {
-    FILE* file = fopen(file_path, "rb");
-    if (!file) {
-        return false;
-    }
-    
-    char buffer[4096];
-    
-    if (fread(buffer, 1, MAX_BUNDLE_ID - 1, file) == 0) { fclose(file); return false; }
-    buffer[MAX_BUNDLE_ID - 1] = '\0';
-    strncpy(bundle->bundle_identifier, buffer, MAX_BUNDLE_ID - 1);
-    
-    if (fread(buffer, 1, MAX_BUNDLE_PATH - 1, file) == 0) { fclose(file); return false; }
-    buffer[MAX_BUNDLE_PATH - 1] = '\0';
-    strncpy(bundle->bundle_path, buffer, MAX_BUNDLE_PATH - 1);
-    
-    size_t name_len = 0;
-    if (fread(&name_len, sizeof(size_t), 1, file) != 1) { fclose(file); return false; }
-    if (name_len > 0) {
-        bundle->bundle_name = (char*)malloc(name_len);
-        if (bundle->bundle_name) {
-            if (fread(bundle->bundle_name, sizeof(char), name_len, file) != name_len) {
-                free(bundle->bundle_name);
-                bundle->bundle_name = NULL;
-            }
-        }
-    }
-    
-    size_t version_len = 0;
-    if (fread(&version_len, sizeof(size_t), 1, file) != 1) { fclose(file); return false; }
-    if (version_len > 0) {
-        bundle->bundle_version = (char*)malloc(version_len);
-        if (bundle->bundle_version) {
-            if (fread(bundle->bundle_version, sizeof(char), version_len, file) != version_len) {
-                free(bundle->bundle_version);
-                bundle->bundle_version = NULL;
-            }
-        }
-    }
-    
-    size_t sys_ver_len = 0;
-    if (fread(&sys_ver_len, sizeof(size_t), 1, file) != 1) { fclose(file); return false; }
-    if (sys_ver_len > 0) {
-        bundle->minimum_system_version = (char*)malloc(sys_ver_len);
-        if (bundle->minimum_system_version) {
-            if (fread(bundle->minimum_system_version, sizeof(char), sys_ver_len, file) != sys_ver_len) {
-                free(bundle->minimum_system_version);
-                bundle->minimum_system_version = NULL;
-            }
-        }
-    }
-    
-    size_t icon_len = 0;
-    if (fread(&icon_len, sizeof(size_t), 1, file) != 1) { fclose(file); return false; }
-    if (icon_len > 0) {
-        bundle->icon_file = (char*)malloc(icon_len);
-        if (bundle->icon_file) {
-            if (fread(bundle->icon_file, sizeof(char), icon_len, file) != icon_len) {
-                free(bundle->icon_file);
-                bundle->icon_file = NULL;
-            }
-        }
-    }
-    
-    fclose(file);
-    return true;
-}
-
-int app_manager_init(const char* install_directory) {
+bool app_manager_init(const char* install_dir) {
     if (g_app_manager) {
-        return 1;
+        return true;
     }
     
     g_app_manager = (app_manager*)malloc(sizeof(app_manager));
     if (!g_app_manager) {
-        return 0;
+        return false;
     }
     
-    if (install_directory) {
-        strncpy(g_app_manager->install_directory, install_directory, MAX_BUNDLE_PATH - 1);
+    if (install_dir) {
+        strncpy(g_app_manager->install_directory, install_dir, MAX_BUNDLE_PATH - 1);
     } else {
         snprintf(g_app_manager->install_directory, MAX_BUNDLE_PATH, "./Applications");
     }
@@ -395,15 +283,21 @@ int app_manager_init(const char* install_directory) {
     create_directory_recursive(g_app_manager->install_directory);
     
     g_app_manager->bundles = NULL;
-    g_app_manager->bundle_count = 0;
+    g_app_manager->num_bundles = 0;
     g_app_manager->max_bundles = 16;
     g_app_manager->bundles = (app_bundle*)malloc(sizeof(app_bundle) * g_app_manager->max_bundles);
     
     if (!g_app_manager->bundles) {
         free(g_app_manager);
         g_app_manager = NULL;
-        return 0;
+        return false;
     }
+    
+    return app_manager_load();
+}
+
+bool app_manager_load(void) {
+    if (!g_app_manager) return false;
     
     char db_path[MAX_BUNDLE_PATH];
     snprintf(db_path, sizeof(db_path), "%s/.app_db", g_app_manager->install_directory);
@@ -413,32 +307,103 @@ int app_manager_init(const char* install_directory) {
         int count;
         if (fread(&count, sizeof(int), 1, db_file) == 1) {
             for (int i = 0; i < count && i < g_app_manager->max_bundles; i++) {
-                app_bundle_load_from_file(db_path, &g_app_manager->bundles[i]);
-                g_app_manager->bundle_count++;
+                char buffer[MAX_BUNDLE_PATH];
+                fread(buffer, 1, MAX_BUNDLE_ID - 1, db_file);
+                strncpy(g_app_manager->bundles[i].bundle_identifier, buffer, MAX_BUNDLE_ID - 1);
+                
+                fread(buffer, 1, MAX_BUNDLE_PATH - 1, db_file);
+                strncpy(g_app_manager->bundles[i].bundle_path, buffer, MAX_BUNDLE_PATH - 1);
+                
+                size_t len;
+                fread(&len, sizeof(size_t), 1, db_file);
+                if (len > 0) {
+                    char* str = (char*)malloc(len);
+                    fread(str, 1, len, db_file);
+                    g_app_manager->bundles[i].bundle_name = str;
+                }
+                
+                fread(&len, sizeof(size_t), 1, db_file);
+                if (len > 0) {
+                    char* str = (char*)malloc(len);
+                    fread(str, 1, len, db_file);
+                    g_app_manager->bundles[i].bundle_version = str;
+                }
+                
+                fread(&len, sizeof(size_t), 1, db_file);
+                if (len > 0) {
+                    char* str = (char*)malloc(len);
+                    fread(str, 1, len, db_file);
+                    g_app_manager->bundles[i].minimum_system_version = str;
+                }
+                
+                fread(&len, sizeof(size_t), 1, db_file);
+                if (len > 0) {
+                    char* str = (char*)malloc(len);
+                    fread(str, 1, len, db_file);
+                    g_app_manager->bundles[i].icon_file = str;
+                }
+                
+                g_app_manager->bundles[i].is_valid = true;
+                g_app_manager->bundles[i].info_plist_entries = NULL;
+                g_app_manager->bundles[i].num_plist_entries = 0;
+                
+                g_app_manager->num_bundles++;
             }
         }
         fclose(db_file);
     }
-    
-    return 1;
+    return true;
 }
 
-void app_manager_cleanup(void) {
-    if (!g_app_manager) return;
+bool app_manager_save(void) {
+    if (!g_app_manager) return false;
     
     char db_path[MAX_BUNDLE_PATH];
     snprintf(db_path, sizeof(db_path), "%s/.app_db", g_app_manager->install_directory);
     
     FILE* db_file = fopen(db_path, "wb");
     if (db_file) {
-        fwrite(&g_app_manager->bundle_count, sizeof(int), 1, db_file);
-        for (int i = 0; i < g_app_manager->bundle_count; i++) {
-            app_bundle_save_to_file(&g_app_manager->bundles[i], db_path);
+        fwrite(&g_app_manager->num_bundles, sizeof(int), 1, db_file);
+        for (int i = 0; i < g_app_manager->num_bundles; i++) {
+            fwrite(g_app_manager->bundles[i].bundle_identifier, 1, strlen(g_app_manager->bundles[i].bundle_identifier) + 1, db_file);
+            fwrite(g_app_manager->bundles[i].bundle_path, 1, strlen(g_app_manager->bundles[i].bundle_path) + 1, db_file);
+            
+            size_t len = g_app_manager->bundles[i].bundle_name ? strlen(g_app_manager->bundles[i].bundle_name) + 1 : 0;
+            fwrite(&len, sizeof(size_t), 1, db_file);
+            if (len > 0) {
+                fwrite(g_app_manager->bundles[i].bundle_name, sizeof(char), len, db_file);
+            }
+            
+            len = g_app_manager->bundles[i].bundle_version ? strlen(g_app_manager->bundles[i].bundle_version) + 1 : 0;
+            fwrite(&len, sizeof(size_t), 1, db_file);
+            if (len > 0) {
+                fwrite(g_app_manager->bundles[i].bundle_version, sizeof(char), len, db_file);
+            }
+            
+            len = g_app_manager->bundles[i].minimum_system_version ? strlen(g_app_manager->bundles[i].minimum_system_version) + 1 : 0;
+            fwrite(&len, sizeof(size_t), 1, db_file);
+            if (len > 0) {
+                fwrite(g_app_manager->bundles[i].minimum_system_version, sizeof(char), len, db_file);
+            }
+            
+            len = g_app_manager->bundles[i].icon_file ? strlen(g_app_manager->bundles[i].icon_file) + 1 : 0;
+            fwrite(&len, sizeof(size_t), 1, db_file);
+            if (len > 0) {
+                fwrite(g_app_manager->bundles[i].icon_file, sizeof(char), len, db_file);
+            }
         }
         fclose(db_file);
+        return true;
     }
+    return false;
+}
+
+void app_manager_cleanup(void) {
+    if (!g_app_manager) return;
     
-    for (int i = 0; i < g_app_manager->bundle_count; i++) {
+    app_manager_save();
+    
+    for (int i = 0; i < g_app_manager->num_bundles; i++) {
         app_bundle_free(&g_app_manager->bundles[i]);
     }
     
@@ -474,31 +439,74 @@ void app_bundle_free(app_bundle* bundle) {
     free(bundle->bundle_version);
     free(bundle->minimum_system_version);
     free(bundle->icon_file);
+    
+    info_plist_entry* entry = bundle->info_plist_entries;
+    while (entry) {
+        info_plist_entry* next = (info_plist_entry*)entry->next;
+        info_plist_entry_free(entry);
+        entry = next;
+    }
+    
     free(bundle);
 }
 
-void app_bundle_get_executable_path(const app_bundle* bundle, char* path, size_t path_size) {
-    if (!bundle || !path) return;
+const char* app_bundle_get_info_value(const app_bundle* bundle, const char* key) {
+    if (!bundle || !key) return NULL;
     
-    snprintf(path, path_size, "%s/Contents/MacOS/%s", bundle->bundle_path, bundle->executable_name);
+    info_plist_entry* entry = bundle->info_plist_entries;
+    while (entry) {
+        if (strcmp(entry->key, key) == 0) {
+            return entry->value;
+        }
+        entry = (info_plist_entry*)entry->next;
+    }
+    return NULL;
 }
 
-int app_bundle_launch(const app_bundle* bundle, int argc, char* argv[]) {
-    if (!bundle || !bundle->is_valid) {
-        fprintf(stderr, "Error: Cannot launch invalid bundle\n");
-        return -1;
+char* app_bundle_get_executable_path(const app_bundle* bundle, char* buffer, size_t buffer_size) {
+    if (!bundle || !buffer) return NULL;
+    
+    snprintf(buffer, buffer_size, "%s/Contents/MacOS/%s", bundle->bundle_path, bundle->executable_name);
+    return buffer;
+}
+
+char* app_bundle_get_resource_path(const app_bundle* bundle, char* buffer, size_t buffer_size) {
+    if (!bundle || !buffer) return NULL;
+    
+    snprintf(buffer, buffer_size, "%s/Contents/Resources", bundle->bundle_path);
+    return buffer;
+}
+
+app_bundle* app_bundle_find_by_id(const char* bundle_id) {
+    if (!bundle_id || !g_app_manager) return NULL;
+    
+    for (int i = 0; i < g_app_manager->num_bundles; i++) {
+        if (strcmp(g_app_manager->bundles[i].bundle_identifier, bundle_id) == 0) {
+            return &g_app_manager->bundles[i];
+        }
     }
+    return NULL;
+}
+
+app_bundle* app_bundle_find_by_name(const char* bundle_name) {
+    if (!bundle_name || !g_app_manager) return NULL;
     
-    char exe_path[MAX_BUNDLE_PATH * 2];
-    app_bundle_get_executable_path(bundle, exe_path, sizeof(exe_path));
-    
-    fprintf(stdout, "Launching: %s\n", exe_path);
-    
-    return 0;
+    for (int i = 0; i < g_app_manager->num_bundles; i++) {
+        if (g_app_manager->bundles[i].bundle_name && 
+            strcmp(g_app_manager->bundles[i].bundle_name, bundle_name) == 0) {
+            return &g_app_manager->bundles[i];
+        }
+    }
+    return NULL;
 }
 
 bool app_bundle_install(const char* source_path) {
     if (!source_path || !g_app_manager) return false;
+    
+    if (!is_valid_app_bundle(source_path)) {
+        fprintf(stderr, "Not a valid app bundle: %s\n", source_path);
+        return false;
+    }
     
     const char* bundle_name = strrchr(source_path, '/');
     if (!bundle_name) bundle_name = source_path;
@@ -522,22 +530,23 @@ bool app_bundle_install(const char* source_path) {
         return false;
     }
     
-    if (g_app_manager->bundle_count >= g_app_manager->max_bundles) {
-        app_bundle** new_bundles = (app_bundle**)realloc(g_app_manager->bundles, 
-            sizeof(app_bundle*) * g_app_manager->max_bundles * 2);
+    if (g_app_manager->num_bundles >= g_app_manager->max_bundles) {
+        size_t new_max = g_app_manager->max_bundles * 2;
+        app_bundle* new_bundles = (app_bundle*)realloc(g_app_manager->bundles, 
+            sizeof(app_bundle) * new_max);
         if (new_bundles) {
-            g_app_manager->bundles = (app_bundle*)new_bundles;
-            g_app_manager->max_bundles *= 2;
+            g_app_manager->bundles = new_bundles;
+            g_app_manager->max_bundles = new_max;
         }
     }
     
-    if (g_app_manager->bundle_count < g_app_manager->max_bundles) {
-        memcpy(&g_app_manager->bundles[g_app_manager->bundle_count], bundle, sizeof(app_bundle));
-        g_app_manager->bundle_count++;
+    if (g_app_manager->num_bundles < g_app_manager->max_bundles) {
+        memcpy(&g_app_manager->bundles[g_app_manager->num_bundles], bundle, sizeof(app_bundle));
+        g_app_manager->num_bundles++;
         fprintf(stdout, "Application installed successfully!\n");
     }
     
-    free(bundle);
+    app_bundle_free(bundle);
     return true;
 }
 
@@ -545,7 +554,7 @@ bool app_bundle_uninstall(const char* bundle_id) {
     if (!bundle_id || !g_app_manager) return false;
     
     int index = -1;
-    for (int i = 0; i < g_app_manager->bundle_count; i++) {
+    for (int i = 0; i < g_app_manager->num_bundles; i++) {
         if (strcmp(g_app_manager->bundles[i].bundle_identifier, bundle_id) == 0) {
             index = i;
             break;
@@ -568,11 +577,11 @@ bool app_bundle_uninstall(const char* bundle_id) {
         return false;
     }
     
-    for (int i = index; i < g_app_manager->bundle_count - 1; i++) {
+    for (int i = index; i < g_app_manager->num_bundles - 1; i++) {
         memcpy(&g_app_manager->bundles[i], &g_app_manager->bundles[i + 1], sizeof(app_bundle));
     }
     
-    g_app_manager->bundle_count--;
+    g_app_manager->num_bundles--;
     fprintf(stdout, "Application uninstalled successfully!\n");
     
     return true;
@@ -584,10 +593,10 @@ void app_bundle_list_installed(void) {
     fprintf(stdout, "\nInstalled Applications:\n");
     fprintf(stdout, "────────────────────────────────────────\n");
     
-    if (g_app_manager->bundle_count == 0) {
+    if (g_app_manager->num_bundles == 0) {
         fprintf(stdout, "  No applications installed\n");
     } else {
-        for (int i = 0; i < g_app_manager->bundle_count; i++) {
+        for (int i = 0; i < g_app_manager->num_bundles; i++) {
             app_bundle* bundle = &g_app_manager->bundles[i];
             fprintf(stdout, "  %s\n", bundle->bundle_name ? bundle->bundle_name : "Unknown");
             fprintf(stdout, "    ID:    %s\n", bundle->bundle_identifier);
@@ -603,5 +612,19 @@ void app_bundle_list_installed(void) {
     }
     
     fprintf(stdout, "────────────────────────────────────────\n");
-    fprintf(stdout, "Total: %d application(s)\n\n", g_app_manager->bundle_count);
+    fprintf(stdout, "Total: %d application(s)\n\n", g_app_manager->num_bundles);
+}
+
+int app_bundle_launch(const app_bundle* bundle, int argc, char* argv[]) {
+    if (!bundle || !bundle->is_valid) {
+        fprintf(stderr, "Error: Cannot launch invalid bundle\n");
+        return -1;
+    }
+    
+    char exe_path[MAX_BUNDLE_PATH * 2];
+    app_bundle_get_executable_path(bundle, exe_path, sizeof(exe_path));
+    
+    fprintf(stdout, "Launching: %s\n", exe_path);
+    
+    return 0;
 }

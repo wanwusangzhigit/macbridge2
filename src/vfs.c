@@ -44,14 +44,14 @@ void vfs_cleanup(void) {
 }
 
 // 添加路径映射
-bool vfs_add_mapping(const char* virtual_path, const char* physical_path) {
+int vfs_add_mapping(const char* virtual_path, const char* physical_path) {
     if (!virtual_path || !physical_path) {
-        return false;
+        return 0;
     }
     
     vfs_entry* entry = (vfs_entry*)malloc(sizeof(vfs_entry));
     if (!entry) {
-        return false;
+        return 0;
     }
     
     entry->virtual_path = strdup(virtual_path);
@@ -59,35 +59,7 @@ bool vfs_add_mapping(const char* virtual_path, const char* physical_path) {
     entry->next = vfs_root;
     vfs_root = entry;
     
-    return true;
-}
-
-// 移除路径映射
-bool vfs_remove_mapping(const char* virtual_path) {
-    if (!virtual_path) {
-        return false;
-    }
-    
-    vfs_entry* current = vfs_root;
-    vfs_entry* prev = NULL;
-    
-    while (current) {
-        if (strcmp(current->virtual_path, virtual_path) == 0) {
-            if (prev) {
-                prev->next = current->next;
-            } else {
-                vfs_root = current->next;
-            }
-            free(current->virtual_path);
-            free(current->physical_path);
-            free(current);
-            return true;
-        }
-        prev = current;
-        current = current->next;
-    }
-    
-    return false;
+    return 1;
 }
 
 // 解析虚拟路径到物理路径
@@ -136,23 +108,68 @@ const char* vfs_resolve_path(const char* virtual_path) {
     return virtual_path;
 }
 
-// 列出所有映射
-void vfs_list_mappings(void) {
-    vfs_entry* current = vfs_root;
-    int count = 0;
+// 检查文件是否存在
+bool vfs_file_exists(const char* virtual_path) {
+    const char* real_path = vfs_resolve_path(virtual_path);
+    if (!real_path) return false;
     
-    printf("\nVirtual File System Mappings:\n");
-    printf("────────────────────────────────────────\n");
+    FILE* file = fopen(real_path, "rb");
+    if (file) {
+        fclose(file);
+        return true;
+    }
+    return false;
+}
+
+// 列出目录内容
+int vfs_list_directory(const char* virtual_path, char*** entries, int* count) {
+    const char* real_path = vfs_resolve_path(virtual_path);
+    if (!real_path) return -1;
     
-    while (current) {
-        printf("  %s -> %s\n", current->virtual_path, current->physical_path);
-        current = current->next;
-        count++;
+    DIR* dir = opendir(real_path);
+    if (!dir) return -1;
+    
+    int capacity = 10;
+    *entries = (char**)malloc(capacity * sizeof(char*));
+    *count = 0;
+    
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (*count >= capacity) {
+            capacity *= 2;
+            *entries = (char**)realloc(*entries, capacity * sizeof(char*));
+        }
+        
+        (*entries)[*count] = strdup(entry->d_name);
+        (*count)++;
     }
     
-    if (count == 0) {
-        printf("  (no mappings)\n");
-    }
-    printf("────────────────────────────────────────\n");
-    printf("Total: %d mappings\n\n", count);
+    closedir(dir);
+    return 0;
+}
+
+// 创建目录
+int vfs_mkdir(const char* virtual_path, int mode) {
+    const char* real_path = vfs_resolve_path(virtual_path);
+    if (!real_path) return -1;
+    
+    return mkdir(real_path, mode);
+}
+
+// 删除文件
+int vfs_unlink(const char* virtual_path) {
+    const char* real_path = vfs_resolve_path(virtual_path);
+    if (!real_path) return -1;
+    
+    return unlink(real_path);
+}
+
+// 重命名文件
+int vfs_rename(const char* old_path, const char* new_path) {
+    const char* real_old_path = vfs_resolve_path(old_path);
+    const char* real_new_path = vfs_resolve_path(new_path);
+    
+    if (!real_old_path || !real_new_path) return -1;
+    
+    return rename(real_old_path, real_new_path);
 }
