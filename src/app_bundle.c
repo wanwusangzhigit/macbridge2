@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <dirent.h>
 #include <sys/stat.h>
 #include <errno.h>
 
@@ -21,8 +20,84 @@ static void info_plist_entry_free(info_plist_entry* entry) {
     if (!entry) return;
     free(entry->key);
     free(entry->value);
-    info_plist_entry_free((info_plist_entry*)entry->next);
     free(entry);
+}
+
+static bool extract_plist_key_value(const char* content, const char* key, char* value, size_t value_size) {
+    if (!content || !key || !value) return false;
+    
+    char pattern[256];
+    snprintf(pattern, sizeof(pattern), "<key>%s</key>", key);
+    
+    char* key_pos = strstr(content, pattern);
+    if (!key_pos) return false;
+    
+    char* value_start = strstr(key_pos, "<string>");
+    if (!value_start) return false;
+    
+    value_start += 8;
+    char* value_end = strstr(value_start, "</string>");
+    if (!value_end) return false;
+    
+    size_t value_len = value_end - value_start;
+    if (value_len >= value_size) value_len = value_size - 1;
+    
+    strncpy(value, value_start, value_len);
+    value[value_len] = '\0';
+    
+    return true;
+}
+
+static bool parse_info_plist(const char* plist_path, app_bundle* bundle) {
+    if (!plist_path || !bundle) return false;
+    
+    FILE* file = fopen(plist_path, "r");
+    if (!file) return false;
+    
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    
+    char* content = (char*)malloc(file_size + 1);
+    if (!content) {
+        fclose(file);
+        return false;
+    }
+    
+    fread(content, 1, file_size, file);
+    content[file_size] = '\0';
+    fclose(file);
+    
+    char buffer[1024];
+    
+    if (extract_plist_key_value(content, "CFBundleExecutable", buffer, sizeof(buffer))) {
+        strncpy(bundle->executable_name, buffer, MAX_EXECUTABLE_NAME - 1);
+        bundle->executable_name[MAX_EXECUTABLE_NAME - 1] = '\0';
+    }
+    
+    if (extract_plist_key_value(content, "CFBundleIdentifier", buffer, sizeof(buffer))) {
+        strncpy(bundle->bundle_identifier, buffer, MAX_BUNDLE_ID - 1);
+        bundle->bundle_identifier[MAX_BUNDLE_ID - 1] = '\0';
+    }
+    
+    if (extract_plist_key_value(content, "CFBundleName", buffer, sizeof(buffer))) {
+        bundle->bundle_name = strdup(buffer);
+    }
+    
+    if (extract_plist_key_value(content, "CFBundleVersion", buffer, sizeof(buffer))) {
+        bundle->bundle_version = strdup(buffer);
+    }
+    
+    if (extract_plist_key_value(content, "LSMinimumSystemVersion", buffer, sizeof(buffer))) {
+        bundle->minimum_system_version = strdup(buffer);
+    }
+    
+    if (extract_plist_key_value(content, "CFBundleIconFile", buffer, sizeof(buffer))) {
+        bundle->icon_file = strdup(buffer);
+    }
+    
+    free(content);
+    return true;
 }
 
 static bool create_directory_recursive(const char* path) {
@@ -56,37 +131,6 @@ static bool create_directory_recursive(const char* path) {
         return false;
     }
     
-    return true;
-}
-
-static bool copy_file(const char* src, const char* dst) {
-    FILE* in = fopen(src, "rb");
-    if (!in) {
-        fprintf(stderr, "Failed to open source file: %s\n", src);
-        return false;
-    }
-    
-    FILE* out = fopen(dst, "wb");
-    if (!out) {
-        fclose(in);
-        fprintf(stderr, "Failed to create destination file: %s\n", dst);
-        return false;
-    }
-    
-    char buffer[8192];
-    size_t bytes;
-    
-    while ((bytes = fread(buffer, 1, sizeof(buffer), in)) > 0) {
-        if (fwrite(buffer, 1, bytes, out) != bytes) {
-            fprintf(stderr, "Failed to write to file: %s\n", dst);
-            fclose(in);
-            fclose(out);
-            return false;
-        }
-    }
-    
-    fclose(in);
-    fclose(out);
     return true;
 }
 
@@ -126,23 +170,38 @@ static bool copy_directory_recursive(const char* src_dir, const char* dst_dir) {
             break;
         }
         
-        struct stat st;
-        if (stat(src_path, &st) == 0) {
-            if (S_ISDIR(st.st_mode)) {
+        struct stat stat_buf;
+        if (stat(src_path, &stat_buf) == 0) {
+            if (S_ISDIR(stat_buf.st_mode)) {
                 if (!copy_directory_recursive(src_path, dst_path)) {
                     success = false;
                     break;
                 }
             } else {
-                if (!copy_file(src_path, dst_path)) {
+                FILE* src_file = fopen(src_path, "rb");
+                if (!src_file) {
+                    fprintf(stderr, "Failed to open file: %s\n", src_path);
                     success = false;
                     break;
                 }
+                
+                FILE* dst_file = fopen(dst_path, "wb");
+                if (!dst_file) {
+                    fprintf(stderr, "Failed to create file: %s\n", dst_path);
+                    fclose(src_file);
+                    success = false;
+                    break;
+                }
+                
+                char buffer[8192];
+                size_t bytes;
+                while ((bytes = fread(buffer, 1, sizeof(buffer), src_file)) > 0) {
+                    fwrite(buffer, 1, bytes, dst_file);
+                }
+                
+                fclose(src_file);
+                fclose(dst_file);
             }
-        } else {
-            fprintf(stderr, "Failed to stat: %s\n", src_path);
-            success = false;
-            break;
         }
     }
     
@@ -150,207 +209,236 @@ static bool copy_directory_recursive(const char* src_dir, const char* dst_dir) {
     return success;
 }
 
-// 获取配置文件路径
-static char* get_config_path(char* buffer, size_t buffer_size) {
-    snprintf(buffer, buffer_size, "%s/apps.dat", g_app_manager->install_directory);
-    return buffer;
-}
-
-// 保存应用管理器状态
-bool app_manager_save(void) {
-    if (!g_app_manager) return false;
-    
-    char config_path[1024];
-    get_config_path(config_path, sizeof(config_path));
-    
-    FILE* file = fopen(config_path, "wb");
-    if (!file) {
-        fprintf(stderr, "Failed to open config file for writing: %s\n", config_path);
+static bool remove_directory_recursive(const char* path) {
+    DIR* dir = opendir(path);
+    if (!dir) {
         return false;
     }
     
-    // 写入数量
-    fwrite(&g_app_manager->num_bundles, sizeof(size_t), 1, file);
+    struct dirent* entry;
+    bool success = true;
     
-    // 写入每个应用信息
-    for (size_t i = 0; i < g_app_manager->num_bundles; i++) {
-        app_bundle* bundle = &g_app_manager->bundles[i];
-        
-        // 写入固定大小的字段
-        fwrite(bundle->bundle_path, sizeof(bundle->bundle_path), 1, file);
-        fwrite(bundle->executable_name, sizeof(bundle->executable_name), 1, file);
-        fwrite(bundle->bundle_identifier, sizeof(bundle->bundle_identifier), 1, file);
-        fwrite(&bundle->is_valid, sizeof(bool), 1, file);
-        
-        // 写入字符串长度和内容
-        size_t name_len = bundle->bundle_name ? strlen(bundle->bundle_name) + 1 : 0;
-        fwrite(&name_len, sizeof(size_t), 1, file);
-        if (name_len > 0) {
-            fwrite(bundle->bundle_name, sizeof(char), name_len, file);
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
         }
         
-        size_t version_len = bundle->bundle_version ? strlen(bundle->bundle_version) + 1 : 0;
-        fwrite(&version_len, sizeof(size_t), 1, file);
-        if (version_len > 0) {
-            fwrite(bundle->bundle_version, sizeof(char), version_len, file);
-        }
+        char full_path[4096];
+        snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
         
-        size_t sys_ver_len = bundle->minimum_system_version ? strlen(bundle->minimum_system_version) + 1 : 0;
-        fwrite(&sys_ver_len, sizeof(size_t), 1, file);
-        if (sys_ver_len > 0) {
-            fwrite(bundle->minimum_system_version, sizeof(char), sys_ver_len, file);
-        }
-        
-        size_t icon_len = bundle->icon_file ? strlen(bundle->icon_file) + 1 : 0;
-        fwrite(&icon_len, sizeof(size_t), 1, file);
-        if (icon_len > 0) {
-            fwrite(bundle->icon_file, sizeof(char), icon_len, file);
+        struct stat stat_buf;
+        if (stat(full_path, &stat_buf) == 0) {
+            if (S_ISDIR(stat_buf.st_mode)) {
+                if (!remove_directory_recursive(full_path)) {
+                    success = false;
+                }
+            } else {
+                if (unlink(full_path) != 0) {
+                    fprintf(stderr, "Failed to delete file: %s\n", full_path);
+                    success = false;
+                }
+            }
         }
     }
     
-    fclose(file);
-    fprintf(stdout, "App manager state saved to: %s\n", config_path);
-    return true;
+    closedir(dir);
+    
+    if (rmdir(path) != 0) {
+        fprintf(stderr, "Failed to remove directory: %s\n", path);
+        success = false;
+    }
+    
+    return success;
 }
 
-// 加载应用管理器状态
-bool app_manager_load(void) {
-    if (!g_app_manager) return false;
-    
-    char config_path[1024];
-    get_config_path(config_path, sizeof(config_path));
-    
-    FILE* file = fopen(config_path, "rb");
+static bool app_bundle_save_to_file(const app_bundle* bundle, const char* file_path) {
+    FILE* file = fopen(file_path, "wb");
     if (!file) {
-        fprintf(stdout, "No existing app config found: %s\n", config_path);
+        fprintf(stderr, "Failed to open file for writing: %s\n", file_path);
         return false;
     }
     
-    // 先清理现有的应用
-    for (size_t i = 0; i < g_app_manager->num_bundles; i++) {
-        app_bundle_free(&g_app_manager->bundles[i]);
-    }
-    g_app_manager->num_bundles = 0;
-    
-    // 读取数量
-    size_t num_bundles = 0;
-    if (fread(&num_bundles, sizeof(size_t), 1, file) != 1) {
+    if (fwrite(bundle->bundle_identifier, 1, strlen(bundle->bundle_identifier) + 1, file) != strlen(bundle->bundle_identifier) + 1) {
         fclose(file);
         return false;
     }
     
-    // 确保不超过最大值
-    if (num_bundles > g_app_manager->max_bundles) {
-        num_bundles = g_app_manager->max_bundles;
-    }
-    
-    // 读取每个应用信息
-    for (size_t i = 0; i < num_bundles; i++) {
-        app_bundle* bundle = &g_app_manager->bundles[i];
-        
-        // 重置结构体
-        memset(bundle, 0, sizeof(app_bundle));
-        
-        // 读取固定大小的字段
-        if (fread(bundle->bundle_path, sizeof(bundle->bundle_path), 1, file) != 1) break;
-        if (fread(bundle->executable_name, sizeof(bundle->executable_name), 1, file) != 1) break;
-        if (fread(bundle->bundle_identifier, sizeof(bundle->bundle_identifier), 1, file) != 1) break;
-        if (fread(&bundle->is_valid, sizeof(bool), 1, file) != 1) break;
-        
-        // 读取字符串
-        size_t name_len = 0;
-        if (fread(&name_len, sizeof(size_t), 1, file) != 1) break;
-        if (name_len > 0) {
-            bundle->bundle_name = (char*)malloc(name_len);
-            if (bundle->bundle_name) {
-                if (fread(bundle->bundle_name, sizeof(char), name_len, file) != name_len) {
-                    free(bundle->bundle_name);
-                    bundle->bundle_name = NULL;
-                }
-            }
-        }
-        
-        size_t version_len = 0;
-        if (fread(&version_len, sizeof(size_t), 1, file) != 1) break;
-        if (version_len > 0) {
-            bundle->bundle_version = (char*)malloc(version_len);
-            if (bundle->bundle_version) {
-                if (fread(bundle->bundle_version, sizeof(char), version_len, file) != version_len) {
-                    free(bundle->bundle_version);
-                    bundle->bundle_version = NULL;
-                }
-            }
-        }
-        
-        size_t sys_ver_len = 0;
-        if (fread(&sys_ver_len, sizeof(size_t), 1, file) != 1) break;
-        if (sys_ver_len > 0) {
-            bundle->minimum_system_version = (char*)malloc(sys_ver_len);
-            if (bundle->minimum_system_version) {
-                if (fread(bundle->minimum_system_version, sizeof(char), sys_ver_len, file) != sys_ver_len) {
-                    free(bundle->minimum_system_version);
-                    bundle->minimum_system_version = NULL;
-                }
-            }
-        }
-        
-        size_t icon_len = 0;
-        if (fread(&icon_len, sizeof(size_t), 1, file) != 1) break;
-        if (icon_len > 0) {
-            bundle->icon_file = (char*)malloc(icon_len);
-            if (bundle->icon_file) {
-                if (fread(bundle->icon_file, sizeof(char), icon_len, file) != icon_len) {
-                    free(bundle->icon_file);
-                    bundle->icon_file = NULL;
-                }
-            }
-        }
-        
-        g_app_manager->num_bundles++;
-    }
-    
-    fclose(file);
-    fprintf(stdout, "Loaded %zu apps from: %s\n", g_app_manager->num_bundles, config_path);
-    return true;
-}
-
-bool app_manager_init(const char* install_dir) {
-    if (g_app_manager) return true;
-    
-    g_app_manager = (app_manager*)malloc(sizeof(app_manager));
-    if (!g_app_manager) return false;
-    
-    memset(g_app_manager, 0, sizeof(app_manager));
-    g_app_manager->max_bundles = 64;
-    g_app_manager->bundles = (app_bundle*)malloc(g_app_manager->max_bundles * sizeof(app_bundle));
-    
-    if (!g_app_manager->bundles) {
-        free(g_app_manager);
-        g_app_manager = NULL;
+    if (fwrite(bundle->bundle_path, 1, strlen(bundle->bundle_path) + 1, file) != strlen(bundle->bundle_path) + 1) {
+        fclose(file);
         return false;
     }
     
-    if (install_dir) {
-        strncpy(g_app_manager->install_directory, install_dir, MAX_BUNDLE_PATH - 1);
+    size_t name_len = bundle->bundle_name ? strlen(bundle->bundle_name) + 1 : 1;
+    if (fwrite(&name_len, sizeof(size_t), 1, file) != 1) { fclose(file); return false; }
+    if (bundle->bundle_name) {
+        if (fwrite(bundle->bundle_name, sizeof(char), name_len, file) != name_len) { fclose(file); return false; }
     } else {
-        strcpy(g_app_manager->install_directory, "./Applications");
+        char null_char = '\0';
+        if (fwrite(&null_char, sizeof(char), 1, file) != 1) { fclose(file); return false; }
+    }
+    
+    size_t version_len = bundle->bundle_version ? strlen(bundle->bundle_version) + 1 : 1;
+    if (fwrite(&version_len, sizeof(size_t), 1, file) != 1) { fclose(file); return false; }
+    if (bundle->bundle_version) {
+        if (fwrite(bundle->bundle_version, sizeof(char), version_len, file) != version_len) { fclose(file); return false; }
+    } else {
+        char null_char = '\0';
+        if (fwrite(&null_char, sizeof(char), 1, file) != 1) { fclose(file); return false; }
+    }
+    
+    size_t sys_ver_len = bundle->minimum_system_version ? strlen(bundle->minimum_system_version) + 1 : 1;
+    if (fwrite(&sys_ver_len, sizeof(size_t), 1, file) != 1) { fclose(file); return false; }
+    if (bundle->minimum_system_version) {
+        if (fwrite(bundle->minimum_system_version, sizeof(char), sys_ver_len, file) != sys_ver_len) { fclose(file); return false; }
+    } else {
+        char null_char = '\0';
+        if (fwrite(&null_char, sizeof(char), 1, file) != 1) { fclose(file); return false; }
+    }
+    
+    size_t icon_len = bundle->icon_file ? strlen(bundle->icon_file) + 1 : 1;
+    if (fwrite(&icon_len, sizeof(size_t), 1, file) != 1) { fclose(file); return false; }
+    if (bundle->icon_file) {
+        if (fwrite(bundle->icon_file, sizeof(char), icon_len, file) != icon_len) { fclose(file); return false; }
+    } else {
+        char null_char = '\0';
+        if (fwrite(&null_char, sizeof(char), 1, file) != 1) { fclose(file); return false; }
+    }
+    
+    fclose(file);
+    return true;
+}
+
+static bool app_bundle_load_from_file(const char* file_path, app_bundle* bundle) {
+    FILE* file = fopen(file_path, "rb");
+    if (!file) {
+        return false;
+    }
+    
+    char buffer[4096];
+    
+    if (fread(buffer, 1, MAX_BUNDLE_ID - 1, file) == 0) { fclose(file); return false; }
+    buffer[MAX_BUNDLE_ID - 1] = '\0';
+    strncpy(bundle->bundle_identifier, buffer, MAX_BUNDLE_ID - 1);
+    
+    if (fread(buffer, 1, MAX_BUNDLE_PATH - 1, file) == 0) { fclose(file); return false; }
+    buffer[MAX_BUNDLE_PATH - 1] = '\0';
+    strncpy(bundle->bundle_path, buffer, MAX_BUNDLE_PATH - 1);
+    
+    size_t name_len = 0;
+    if (fread(&name_len, sizeof(size_t), 1, file) != 1) { fclose(file); return false; }
+    if (name_len > 0) {
+        bundle->bundle_name = (char*)malloc(name_len);
+        if (bundle->bundle_name) {
+            if (fread(bundle->bundle_name, sizeof(char), name_len, file) != name_len) {
+                free(bundle->bundle_name);
+                bundle->bundle_name = NULL;
+            }
+        }
+    }
+    
+    size_t version_len = 0;
+    if (fread(&version_len, sizeof(size_t), 1, file) != 1) { fclose(file); return false; }
+    if (version_len > 0) {
+        bundle->bundle_version = (char*)malloc(version_len);
+        if (bundle->bundle_version) {
+            if (fread(bundle->bundle_version, sizeof(char), version_len, file) != version_len) {
+                free(bundle->bundle_version);
+                bundle->bundle_version = NULL;
+            }
+        }
+    }
+    
+    size_t sys_ver_len = 0;
+    if (fread(&sys_ver_len, sizeof(size_t), 1, file) != 1) { fclose(file); return false; }
+    if (sys_ver_len > 0) {
+        bundle->minimum_system_version = (char*)malloc(sys_ver_len);
+        if (bundle->minimum_system_version) {
+            if (fread(bundle->minimum_system_version, sizeof(char), sys_ver_len, file) != sys_ver_len) {
+                free(bundle->minimum_system_version);
+                bundle->minimum_system_version = NULL;
+            }
+        }
+    }
+    
+    size_t icon_len = 0;
+    if (fread(&icon_len, sizeof(size_t), 1, file) != 1) { fclose(file); return false; }
+    if (icon_len > 0) {
+        bundle->icon_file = (char*)malloc(icon_len);
+        if (bundle->icon_file) {
+            if (fread(bundle->icon_file, sizeof(char), icon_len, file) != icon_len) {
+                free(bundle->icon_file);
+                bundle->icon_file = NULL;
+            }
+        }
+    }
+    
+    fclose(file);
+    return true;
+}
+
+int app_manager_init(const char* install_directory) {
+    if (g_app_manager) {
+        return 1;
+    }
+    
+    g_app_manager = (app_manager*)malloc(sizeof(app_manager));
+    if (!g_app_manager) {
+        return 0;
+    }
+    
+    if (install_directory) {
+        strncpy(g_app_manager->install_directory, install_directory, MAX_BUNDLE_PATH - 1);
+    } else {
+        snprintf(g_app_manager->install_directory, MAX_BUNDLE_PATH, "./Applications");
     }
     
     create_directory_recursive(g_app_manager->install_directory);
     
-    // 尝试加载已保存的状态
-    app_manager_load();
+    g_app_manager->bundles = NULL;
+    g_app_manager->bundle_count = 0;
+    g_app_manager->max_bundles = 16;
+    g_app_manager->bundles = (app_bundle*)malloc(sizeof(app_bundle) * g_app_manager->max_bundles);
     
-    return true;
+    if (!g_app_manager->bundles) {
+        free(g_app_manager);
+        g_app_manager = NULL;
+        return 0;
+    }
+    
+    char db_path[MAX_BUNDLE_PATH];
+    snprintf(db_path, sizeof(db_path), "%s/.app_db", g_app_manager->install_directory);
+    
+    FILE* db_file = fopen(db_path, "rb");
+    if (db_file) {
+        int count;
+        if (fread(&count, sizeof(int), 1, db_file) == 1) {
+            for (int i = 0; i < count && i < g_app_manager->max_bundles; i++) {
+                app_bundle_load_from_file(db_path, &g_app_manager->bundles[i]);
+                g_app_manager->bundle_count++;
+            }
+        }
+        fclose(db_file);
+    }
+    
+    return 1;
 }
 
 void app_manager_cleanup(void) {
     if (!g_app_manager) return;
     
-    // 保存状态
-    app_manager_save();
+    char db_path[MAX_BUNDLE_PATH];
+    snprintf(db_path, sizeof(db_path), "%s/.app_db", g_app_manager->install_directory);
     
-    for (size_t i = 0; i < g_app_manager->num_bundles; i++) {
+    FILE* db_file = fopen(db_path, "wb");
+    if (db_file) {
+        fwrite(&g_app_manager->bundle_count, sizeof(int), 1, db_file);
+        for (int i = 0; i < g_app_manager->bundle_count; i++) {
+            app_bundle_save_to_file(&g_app_manager->bundles[i], db_path);
+        }
+        fclose(db_file);
+    }
+    
+    for (int i = 0; i < g_app_manager->bundle_count; i++) {
         app_bundle_free(&g_app_manager->bundles[i]);
     }
     
@@ -368,218 +456,31 @@ app_bundle* app_bundle_parse(const char* bundle_path) {
     memset(bundle, 0, sizeof(app_bundle));
     
     strncpy(bundle->bundle_path, bundle_path, MAX_BUNDLE_PATH - 1);
+    bundle->bundle_path[MAX_BUNDLE_PATH - 1] = '\0';
     
-    char plist_path[MAX_BUNDLE_PATH];
-    snprintf(plist_path, sizeof(plist_path), "%s/Contents/Info.plist", bundle_path);
+    char info_plist_path[MAX_BUNDLE_PATH];
+    snprintf(info_plist_path, sizeof(info_plist_path), "%s/Contents/Info.plist", bundle_path);
     
-    if (!parse_info_plist(plist_path, bundle)) {
-        free(bundle);
-        return NULL;
+    if (parse_info_plist(info_plist_path, bundle)) {
+        bundle->is_valid = true;
     }
     
-    bundle->is_valid = true;
     return bundle;
 }
 
 void app_bundle_free(app_bundle* bundle) {
     if (!bundle) return;
-    
     free(bundle->bundle_name);
     free(bundle->bundle_version);
     free(bundle->minimum_system_version);
     free(bundle->icon_file);
-    info_plist_entry_free(bundle->info_plist_entries);
-    memset(bundle, 0, sizeof(app_bundle));
+    free(bundle);
 }
 
-const char* app_bundle_get_info_value(const app_bundle* bundle, const char* key) {
-    if (!bundle || !key) return NULL;
+void app_bundle_get_executable_path(const app_bundle* bundle, char* path, size_t path_size) {
+    if (!bundle || !path) return;
     
-    info_plist_entry* entry = bundle->info_plist_entries;
-    while (entry) {
-        if (strcmp(entry->key, key) == 0) {
-            return entry->value;
-        }
-        entry = (info_plist_entry*)entry->next;
-    }
-    
-    return NULL;
-}
-
-char* app_bundle_get_executable_path(const app_bundle* bundle, char* buffer, size_t buffer_size) {
-    if (!bundle || !buffer) return NULL;
-    
-    snprintf(buffer, buffer_size, "%s/Contents/MacOS/%s", 
-             bundle->bundle_path, bundle->executable_name);
-    return buffer;
-}
-
-char* app_bundle_get_resource_path(const app_bundle* bundle, char* buffer, size_t buffer_size) {
-    if (!bundle || !buffer) return NULL;
-    
-    snprintf(buffer, buffer_size, "%s/Contents/Resources", bundle->bundle_path);
-    return buffer;
-}
-
-bool app_bundle_install(const char* source_path) {
-    if (!g_app_manager || !source_path) return false;
-    
-    if (!is_valid_app_bundle(source_path)) {
-        fprintf(stderr, "Error: Invalid app bundle at %s\n", source_path);
-        return false;
-    }
-    
-    app_bundle* bundle = app_bundle_parse(source_path);
-    if (!bundle) {
-        fprintf(stderr, "Error: Failed to parse app bundle\n");
-        return false;
-    }
-    
-    for (size_t i = 0; i < g_app_manager->num_bundles; i++) {
-        if (strcmp(g_app_manager->bundles[i].bundle_identifier, bundle->bundle_identifier) == 0) {
-            fprintf(stderr, "Error: App %s is already installed\n", bundle->bundle_name);
-            app_bundle_free(bundle);
-            free(bundle);
-            return false;
-        }
-    }
-    
-    const char* bundle_name = strrchr(source_path, '/');
-    if (!bundle_name) bundle_name = source_path;
-    else bundle_name++;
-    
-    char dest_path[MAX_BUNDLE_PATH * 2];
-    snprintf(dest_path, sizeof(dest_path), "%s/%s", 
-             g_app_manager->install_directory, bundle_name);
-    
-    fprintf(stdout, "Installing %s...\n", bundle->bundle_name);
-    fprintf(stdout, "Source: %s\n", source_path);
-    fprintf(stdout, "Destination: %s\n", dest_path);
-    
-    if (!copy_directory_recursive(source_path, dest_path)) {
-        fprintf(stderr, "Error: Failed to copy application files\n");
-        app_bundle_free(bundle);
-        free(bundle);
-        return false;
-    }
-    
-    app_bundle* installed_bundle = app_bundle_parse(dest_path);
-    if (!installed_bundle) {
-        fprintf(stderr, "Error: Failed to parse installed app bundle\n");
-        app_bundle_free(bundle);
-        free(bundle);
-        return false;
-    }
-    
-    if (g_app_manager->num_bundles < g_app_manager->max_bundles) {
-        memcpy(&g_app_manager->bundles[g_app_manager->num_bundles], installed_bundle, sizeof(app_bundle));
-        g_app_manager->num_bundles++;
-    }
-    
-    free(installed_bundle);
-    app_bundle_free(bundle);
-    
-    // 保存状态
-    app_manager_save();
-    
-    fprintf(stdout, "Installation complete!\n");
-    return true;
-}
-
-bool app_bundle_uninstall(const char* bundle_id) {
-    if (!g_app_manager || !bundle_id) return false;
-    
-    size_t index = (size_t)-1;
-    for (size_t i = 0; i < g_app_manager->num_bundles; i++) {
-        if (strcmp(g_app_manager->bundles[i].bundle_identifier, bundle_id) == 0) {
-            index = i;
-            break;
-        }
-    }
-    
-    if (index == (size_t)-1) {
-        fprintf(stderr, "Error: Bundle not found: %s\n", bundle_id);
-        return false;
-    }
-    
-    char app_path[MAX_BUNDLE_PATH];
-    strncpy(app_path, g_app_manager->bundles[index].bundle_path, MAX_BUNDLE_PATH - 1);
-    app_path[MAX_BUNDLE_PATH - 1] = '\0';
-    
-    char rm_cmd[1024];
-    snprintf(rm_cmd, sizeof(rm_cmd), "rm -rf \"%s\"", app_path);
-    
-    fprintf(stdout, "Uninstalling %s...\n", g_app_manager->bundles[index].bundle_name);
-    
-    int ret = system(rm_cmd);
-    if (ret != 0) {
-        fprintf(stderr, "Warning: Failed to remove application files (exit code: %d)\n", ret);
-    }
-    
-    app_bundle_free(&g_app_manager->bundles[index]);
-    
-    for (size_t j = index; j < g_app_manager->num_bundles - 1; j++) {
-        g_app_manager->bundles[j] = g_app_manager->bundles[j + 1];
-    }
-    memset(&g_app_manager->bundles[g_app_manager->num_bundles - 1], 0, sizeof(app_bundle));
-    g_app_manager->num_bundles--;
-    
-    // 保存状态
-    app_manager_save();
-    
-    fprintf(stdout, "Uninstalled successfully!\n");
-    return true;
-}
-
-void app_bundle_list_installed(void) {
-    if (!g_app_manager) {
-        fprintf(stdout, "No applications installed.\n");
-        return;
-    }
-    
-    if (g_app_manager->num_bundles == 0) {
-        fprintf(stdout, "No applications installed.\n");
-        return;
-    }
-    
-    fprintf(stdout, "Installed applications (%zu):\n\n", g_app_manager->num_bundles);
-    for (size_t i = 0; i < g_app_manager->num_bundles; i++) {
-        app_bundle* bundle = &g_app_manager->bundles[i];
-        const char* name = bundle->bundle_name ? bundle->bundle_name : "Unknown";
-        fprintf(stdout, "  [%zu] %s\n", i + 1, name);
-        fprintf(stdout, "      ID: %s\n", bundle->bundle_identifier);
-        fprintf(stdout, "      Version: %s\n", bundle->bundle_version ? bundle->bundle_version : "N/A");
-        fprintf(stdout, "      Path: %s\n", bundle->bundle_path);
-        if (bundle->minimum_system_version) {
-            fprintf(stdout, "      Requires: macOS %s+\n", bundle->minimum_system_version);
-        }
-        fprintf(stdout, "\n");
-    }
-}
-
-app_bundle* app_bundle_find_by_id(const char* bundle_id) {
-    if (!g_app_manager || !bundle_id) return NULL;
-    
-    for (size_t i = 0; i < g_app_manager->num_bundles; i++) {
-        if (strcmp(g_app_manager->bundles[i].bundle_identifier, bundle_id) == 0) {
-            return &g_app_manager->bundles[i];
-        }
-    }
-    
-    return NULL;
-}
-
-app_bundle* app_bundle_find_by_name(const char* bundle_name) {
-    if (!g_app_manager || !bundle_name) return NULL;
-    
-    for (size_t i = 0; i < g_app_manager->num_bundles; i++) {
-        if (g_app_manager->bundles[i].bundle_name && 
-            strcmp(g_app_manager->bundles[i].bundle_name, bundle_name) == 0) {
-            return &g_app_manager->bundles[i];
-        }
-    }
-    
-    return NULL;
+    snprintf(path, path_size, "%s/Contents/MacOS/%s", bundle->bundle_path, bundle->executable_name);
 }
 
 int app_bundle_launch(const app_bundle* bundle, int argc, char* argv[]) {
@@ -591,146 +492,116 @@ int app_bundle_launch(const app_bundle* bundle, int argc, char* argv[]) {
     char exe_path[MAX_BUNDLE_PATH * 2];
     app_bundle_get_executable_path(bundle, exe_path, sizeof(exe_path));
     
-    const char* name = bundle->bundle_name ? bundle->bundle_name : "Unknown";
-    fprintf(stdout, "Launching: %s\n", name);
-    fprintf(stdout, "Executable: %s\n", exe_path);
+    fprintf(stdout, "Launching: %s\n", exe_path);
     
-    FILE* file = fopen(exe_path, "rb");
-    if (!file) {
-        fprintf(stderr, "Error: Executable not found at %s\n", exe_path);
-        return -1;
-    }
-    fclose(file);
-    
-    fprintf(stdout, "Executable found. Loading Mach-O file...\n");
-    
-    struct mach_header* header = NULL;
-    bool is_64bit = false;
-    
-    if (!parse_macho_header(exe_path, &header, &is_64bit)) {
-        fprintf(stderr, "Error: Failed to parse Mach-O header\n");
-        return -1;
-    }
-    
-    fprintf(stdout, "Mach-O Header:\n");
-    fprintf(stdout, "  Magic: 0x%x\n", header->magic);
-    fprintf(stdout, "  CPU Type: 0x%x\n", header->cputype);
-    fprintf(stdout, "  File Type: 0x%x\n", header->filetype);
-    fprintf(stdout, "  Number of commands: %d\n", header->ncmds);
-    fprintf(stdout, "  64-bit: %s\n", is_64bit ? "Yes" : "No");
-    
-    void* base_address = NULL;
-    if (!map_macho_segments(exe_path, header, is_64bit, &base_address)) {
-        fprintf(stderr, "Error: Failed to map Mach-O segments\n");
-        free(header);
-        return -1;
-    }
-    
-    void* main_addr = find_main_function(exe_path, header, is_64bit, base_address);
-    if (main_addr) {
-        fprintf(stdout, "Main function found at: %p\n", main_addr);
-        fprintf(stdout, "\nReady to execute main function (execution not implemented in demo mode)\n");
-    } else {
-        fprintf(stdout, "Main function not found (this is normal for some Mach-O files)\n");
-    }
-    
-    unmap_macho_segments(base_address, header, is_64bit);
-    
-    fprintf(stdout, "Launch completed!\n");
     return 0;
 }
 
-bool is_valid_app_bundle(const char* path) {
-    if (!path) return false;
+bool app_bundle_install(const char* source_path) {
+    if (!source_path || !g_app_manager) return false;
     
-    char plist_path[MAX_BUNDLE_PATH];
-    snprintf(plist_path, sizeof(plist_path), "%s/Contents/Info.plist", path);
+    const char* bundle_name = strrchr(source_path, '/');
+    if (!bundle_name) bundle_name = source_path;
+    else bundle_name++;
     
-    FILE* file = fopen(plist_path, "r");
-    if (!file) return false;
-    fclose(file);
+    char dest_path[MAX_BUNDLE_PATH * 2];
+    snprintf(dest_path, sizeof(dest_path), "%s/%s", 
+             g_app_manager->install_directory, bundle_name);
     
-    return true;
-}
-
-bool parse_info_plist(const char* plist_path, app_bundle* bundle) {
-    if (!plist_path || !bundle) return false;
+    fprintf(stdout, "Installing from %s to %s\n", source_path, dest_path);
     
-    FILE* file = fopen(plist_path, "r");
-    if (!file) return false;
-    
-    fseek(file, 0, SEEK_END);
-    long file_size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    
-    char* content = (char*)malloc(file_size + 1);
-    if (!content) {
-        fclose(file);
+    if (!copy_directory_recursive(source_path, dest_path)) {
+        fprintf(stderr, "Error: Failed to copy application bundle\n");
         return false;
     }
     
-    size_t read_count = fread(content, 1, file_size, file);
-    if (read_count != (size_t)file_size) {
-        fprintf(stderr, "Warning: Incomplete read of plist file\n");
-    }
-    content[file_size] = '\0';
-    fclose(file);
-    
-    char buffer[256];
-    
-    if (extract_plist_key_value(content, "CFBundleExecutable", buffer, sizeof(buffer))) {
-        strncpy(bundle->executable_name, buffer, MAX_EXECUTABLE_NAME - 1);
-        bundle->executable_name[MAX_EXECUTABLE_NAME - 1] = '\0';
+    app_bundle* bundle = app_bundle_parse(dest_path);
+    if (!bundle) {
+        fprintf(stderr, "Error: Failed to parse installed bundle\n");
+        remove_directory_recursive(dest_path);
+        return false;
     }
     
-    if (extract_plist_key_value(content, "CFBundleIdentifier", buffer, sizeof(buffer))) {
-        strncpy(bundle->bundle_identifier, buffer, MAX_BUNDLE_ID - 1);
-        bundle->bundle_identifier[MAX_BUNDLE_ID - 1] = '\0';
+    if (g_app_manager->bundle_count >= g_app_manager->max_bundles) {
+        app_bundle** new_bundles = (app_bundle**)realloc(g_app_manager->bundles, 
+            sizeof(app_bundle*) * g_app_manager->max_bundles * 2);
+        if (new_bundles) {
+            g_app_manager->bundles = (app_bundle*)new_bundles;
+            g_app_manager->max_bundles *= 2;
+        }
     }
     
-    if (extract_plist_key_value(content, "CFBundleName", buffer, sizeof(buffer))) {
-        bundle->bundle_name = strdup_safe(buffer);
+    if (g_app_manager->bundle_count < g_app_manager->max_bundles) {
+        memcpy(&g_app_manager->bundles[g_app_manager->bundle_count], bundle, sizeof(app_bundle));
+        g_app_manager->bundle_count++;
+        fprintf(stdout, "Application installed successfully!\n");
     }
     
-    if (extract_plist_key_value(content, "CFBundleShortVersionString", buffer, sizeof(buffer))) {
-        bundle->bundle_version = strdup_safe(buffer);
-    } else if (extract_plist_key_value(content, "CFBundleVersion", buffer, sizeof(buffer))) {
-        bundle->bundle_version = strdup_safe(buffer);
-    }
-    
-    if (extract_plist_key_value(content, "LSMinimumSystemVersion", buffer, sizeof(buffer))) {
-        bundle->minimum_system_version = strdup_safe(buffer);
-    }
-    
-    if (extract_plist_key_value(content, "CFBundleIconFile", buffer, sizeof(buffer))) {
-        bundle->icon_file = strdup_safe(buffer);
-    }
-    
-    free(content);
+    free(bundle);
     return true;
 }
 
-bool extract_plist_key_value(const char* plist_content, const char* key, char* value, size_t value_size) {
-    if (!plist_content || !key || !value) return false;
+bool app_bundle_uninstall(const char* bundle_id) {
+    if (!bundle_id || !g_app_manager) return false;
     
-    char key_tag[256];
-    snprintf(key_tag, sizeof(key_tag), "<key>%s</key>", key);
+    int index = -1;
+    for (int i = 0; i < g_app_manager->bundle_count; i++) {
+        if (strcmp(g_app_manager->bundles[i].bundle_identifier, bundle_id) == 0) {
+            index = i;
+            break;
+        }
+    }
     
-    const char* key_pos = strstr(plist_content, key_tag);
-    if (!key_pos) return false;
+    if (index == -1) {
+        fprintf(stderr, "Error: Bundle not found: %s\n", bundle_id);
+        return false;
+    }
     
-    const char* value_start = strchr(key_pos + strlen(key_tag), '>');
-    if (!value_start) return false;
-    value_start++;
+    char app_path[MAX_BUNDLE_PATH];
+    strncpy(app_path, g_app_manager->bundles[index].bundle_path, MAX_BUNDLE_PATH - 1);
+    app_path[MAX_BUNDLE_PATH - 1] = '\0';
     
-    const char* value_end = strchr(value_start, '<');
-    if (!value_end) return false;
+    fprintf(stdout, "Uninstalling: %s\n", app_path);
     
-    size_t len = value_end - value_start;
-    if (len >= value_size) len = value_size - 1;
+    if (!remove_directory_recursive(app_path)) {
+        fprintf(stderr, "Error: Failed to remove application files\n");
+        return false;
+    }
     
-    strncpy(value, value_start, len);
-    value[len] = '\0';
+    for (int i = index; i < g_app_manager->bundle_count - 1; i++) {
+        memcpy(&g_app_manager->bundles[i], &g_app_manager->bundles[i + 1], sizeof(app_bundle));
+    }
+    
+    g_app_manager->bundle_count--;
+    fprintf(stdout, "Application uninstalled successfully!\n");
     
     return true;
+}
+
+void app_bundle_list_installed(void) {
+    if (!g_app_manager) return;
+    
+    fprintf(stdout, "\nInstalled Applications:\n");
+    fprintf(stdout, "────────────────────────────────────────\n");
+    
+    if (g_app_manager->bundle_count == 0) {
+        fprintf(stdout, "  No applications installed\n");
+    } else {
+        for (int i = 0; i < g_app_manager->bundle_count; i++) {
+            app_bundle* bundle = &g_app_manager->bundles[i];
+            fprintf(stdout, "  %s\n", bundle->bundle_name ? bundle->bundle_name : "Unknown");
+            fprintf(stdout, "    ID:    %s\n", bundle->bundle_identifier);
+            fprintf(stdout, "    Path:  %s\n", bundle->bundle_path);
+            if (bundle->bundle_version) {
+                fprintf(stdout, "    Ver:   %s\n", bundle->bundle_version);
+            }
+            if (bundle->minimum_system_version) {
+                fprintf(stdout, "    Req:   macOS %s+\n", bundle->minimum_system_version);
+            }
+            fprintf(stdout, "\n");
+        }
+    }
+    
+    fprintf(stdout, "────────────────────────────────────────\n");
+    fprintf(stdout, "Total: %d application(s)\n\n", g_app_manager->bundle_count);
 }
