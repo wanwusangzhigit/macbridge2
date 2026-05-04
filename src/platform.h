@@ -6,6 +6,9 @@
 // 平台抽象层
 #ifdef _WIN32
     #include <Windows.h>
+    #include <sys/stat.h>
+    #include <direct.h>
+    
     typedef HANDLE platform_handle;
     typedef DWORD platform_size_t;
     typedef LONG ssize_t;
@@ -39,11 +42,24 @@
     #define O_CREAT    0x0100
     #define O_TRUNC    0x0200
     #define O_APPEND   0x0400
+    
+    // Windows 下的 stat 结构和相关宏的补充定义
+    #define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
+    #define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
+    
+    // 使用 Windows 的 _stat 结构
+    #define stat _stat
+    #define mkdir(path, mode) _mkdir(path)
+    #define unlink(path) _unlink(path)
+    #define access(path, mode) _access(path, mode)
+    #define getcwd(buf, size) _getcwd(buf, size)
 #else
     #include <sys/mman.h>
+    #include <sys/stat.h>
     #include <unistd.h>
     #include <fcntl.h>
     #include <dirent.h>
+    #include <sys/stat.h>
     typedef int platform_handle;
     typedef size_t platform_size_t;
 #endif
