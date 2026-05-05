@@ -10,11 +10,18 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      create_release:
+        type: boolean
+        description: "Create a release"
+        required: true
+        default: false
 
 jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -75,31 +82,40 @@ jobs:
         run: |
           mkdir -p artifacts
           cp bin/test_loader artifacts/ || true
+          cp bin/app_loader artifacts/ || true
+          cp -r TestApp.app artifacts/ || true
           cp WinDarling/build/test_foundation artifacts/ || true
           cp WinDarling/build/advanced_demo artifacts/ || true
           cp WinDarling/build/diagnostics_demo artifacts/ || true
+          ls -la artifacts/
 
       - name: Prepare artifacts (Windows)
         if: runner.os == 'Windows'
         shell: cmd
         run: |
           mkdir artifacts
-          copy bin\test_loader.exe artifacts\ || echo "C core not built"
+          copy bin\test_loader.exe artifacts\ || echo "test_loader not built"
+          copy bin\app_loader.exe artifacts\ || echo "app_loader not built"
+          xcopy /E /I TestApp.app artifacts\TestApp.app\ || echo "TestApp.app not found"
           copy WinDarling\build\Release\test_foundation.exe artifacts\ || copy WinDarling\build\test_foundation.exe artifacts\ || echo "test_foundation not found"
           copy WinDarling\build\Release\advanced_demo.exe artifacts\ || copy WinDarling\build\advanced_demo.exe artifacts\ || echo "advanced_demo not found"
           copy WinDarling\build\Release\diagnostics_demo.exe artifacts\ || copy WinDarling\build\diagnostics_demo.exe artifacts\ || echo "diagnostics_demo not found"
+          dir artifacts\
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
           path: artifacts/
-          retention-days: 30
+          retention-days: 90
 
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_release == 'true'
+
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
@@ -120,16 +136,24 @@ jobs:
           zip -r ../windarling-windows.zip windarling-windows/ || true
           zip -r ../windarling-macos.zip windarling-macos/ || true
           cd ..
+          ls -la *.zip || true
+
+      - name: Generate release tag
+        id: tag
+        if: startsWith(github.ref, 'refs/tags/v') == false
+        run: |
+          echo "release_tag=$(date +v%Y.%m.%d-%H%M%S)" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          name: WinDarling ${{ github.ref_name }}
+          name: WinDarling ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || steps.tag.outputs.release_tag }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || steps.tag.outputs.release_tag }}
           body: |
-            ## WinDarling ${{ github.ref_name }}
+            ## WinDarling ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || steps.tag.outputs.release_tag }}
             
             ### Changes
-            See [commit history](https://github.com/${{ github.repository }}/commits/${{ github.ref_name }}) for details.
+            See [commit history](https://github.com/${{ github.repository }}/commits/${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'main' }}) for details.
             
             ### Downloads
             - **Linux**: windarling-linux.zip
@@ -143,6 +167,7 @@ jobs:
             
             ### Build artifacts
             - `test_loader` - Mach-O loader test program
+            - `app_loader` - Application bundle loader and manager
             - `test_foundation` - Foundation framework tests
             - `advanced_demo` - Advanced usage demo
             - `diagnostics_demo` - Diagnostics tools demo
@@ -151,6 +176,6 @@ jobs:
             windarling-windows.zip
             windarling-macos.zip
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
