@@ -43,11 +43,11 @@ static struct {
     #define mkdir(path, mode) _mkdir(path)
     #define rmdir(path) _rmdir(path)
     
-    struct stat {
+    struct win_stat {
         off_t st_size;
     };
     
-    static off_t lseek(int fd, off_t offset, int whence) {
+    static off_t win_lseek(int fd, off_t offset, int whence) {
         LONG high = 0;
         DWORD result = SetFilePointer((HANDLE)fd_map[fd], (LONG)offset, &high, (DWORD)whence);
         if (result == INVALID_SET_FILE_POINTER) {
@@ -56,7 +56,7 @@ static struct {
         return ((off_t)high << 32) | result;
     }
     
-    static int stat(const char* path, struct stat* buf) {
+    static int win_stat(const char* path, struct win_stat* buf) {
         WIN32_FILE_ATTRIBUTE_DATA attr;
         if (!GetFileAttributesExA(path, GetFileExInfoStandard, &attr)) {
             return -1;
@@ -65,7 +65,7 @@ static struct {
         return 0;
     }
     
-    static int fstat(int fd, struct stat* buf) {
+    static int win_fstat(int fd, struct win_stat* buf) {
         HANDLE handle = (HANDLE)fd_map[fd];
         LARGE_INTEGER size;
         if (!GetFileSizeEx(handle, &size)) {
@@ -271,6 +271,40 @@ ssize_t sys_write(int fd, const void* buf, size_t count) {
     return platform_write(fd_map[fd], buf, count);
 }
 
+#ifdef _WIN32
+// 定位文件指针
+off_t sys_lseek(int fd, off_t offset, int whence) {
+    if (fd < 0 || fd >= 1024 || !fd_map[fd]) {
+        return -1;
+    }
+    
+    return win_lseek(fd, offset, whence);
+}
+
+// 获取文件状态
+int sys_stat(const char* path, struct stat* buf) {
+    struct win_stat wbuf;
+    int result = win_stat(path, &wbuf);
+    if (result == 0) {
+        buf->st_size = wbuf.st_size;
+    }
+    return result;
+}
+
+// 获取文件描述符状态
+int sys_fstat(int fd, struct stat* buf) {
+    if (fd < 0 || fd >= 1024 || !fd_map[fd]) {
+        return -1;
+    }
+    
+    struct win_stat wbuf;
+    int result = win_fstat(fd, &wbuf);
+    if (result == 0) {
+        buf->st_size = wbuf.st_size;
+    }
+    return result;
+}
+#else
 // 定位文件指针
 off_t sys_lseek(int fd, off_t offset, int whence) {
     if (fd < 0 || fd >= 1024 || !fd_map[fd]) {
@@ -293,6 +327,7 @@ int sys_fstat(int fd, struct stat* buf) {
     
     return fstat(fd, buf);
 }
+#endif
 
 // 文件访问权限
 int sys_access(const char* path, int mode) {
