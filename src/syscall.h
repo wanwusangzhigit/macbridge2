@@ -5,11 +5,13 @@
 
 #ifdef _WIN32
 #include <sys/stat.h>
+#include <sys/types.h>
 typedef unsigned int mode_t;
 typedef unsigned int uid_t;
 typedef unsigned int gid_t;
-typedef __int64 off_t;
+#ifndef ssize_t
 typedef int ssize_t;
+#endif
 #endif
 
 // 定义 Mach 相关类型
