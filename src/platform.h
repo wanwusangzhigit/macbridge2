@@ -7,16 +7,17 @@
 #ifdef _WIN32
     #include <Windows.h>
     #include <sys/stat.h>
+    #include <sys/types.h>
     #include <direct.h>
     
     typedef HANDLE platform_handle;
     typedef DWORD platform_size_t;
+    #ifndef ssize_t
     typedef LONG ssize_t;
-    typedef LONG off_t;
+    #endif
+    #ifndef pid_t
     typedef int pid_t;
-    typedef int uid_t;
-    typedef int gid_t;
-    typedef int mode_t;
+    #endif
     
     typedef struct _WIN32_DIR {
         HANDLE hFind;

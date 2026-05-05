@@ -3,6 +3,17 @@
 #include <stdint.h>
 #include "platform.h"
 
+#ifdef _WIN32
+#include <sys/stat.h>
+#include <sys/types.h>
+typedef unsigned int mode_t;
+typedef unsigned int uid_t;
+typedef unsigned int gid_t;
+#ifndef ssize_t
+typedef int ssize_t;
+#endif
+#endif
+
 // 定义 Mach 相关类型
 typedef uint32_t mach_port_t;
 typedef uint32_t mach_msg_timeout_t;
