@@ -306,40 +306,60 @@ bool app_manager_load(void) {
         int count;
         if (fread(&count, sizeof(int), 1, db_file) == 1) {
             for (int i = 0; i < count && i < g_app_manager->max_bundles; i++) {
-                char buffer[MAX_BUNDLE_PATH];
-                fread(buffer, 1, MAX_BUNDLE_ID - 1, db_file);
-                strncpy(g_app_manager->bundles[i].bundle_identifier, buffer, MAX_BUNDLE_ID - 1);
-                
-                fread(buffer, 1, MAX_BUNDLE_PATH - 1, db_file);
-                strncpy(g_app_manager->bundles[i].bundle_path, buffer, MAX_BUNDLE_PATH - 1);
+                // 初始化结构体
+                memset(&g_app_manager->bundles[i], 0, sizeof(app_bundle));
                 
                 size_t len;
+                // 读取 bundle_identifier
                 fread(&len, sizeof(size_t), 1, db_file);
-                if (len > 0) {
-                    char* str = (char*)malloc(len);
-                    fread(str, 1, len, db_file);
-                    g_app_manager->bundles[i].bundle_name = str;
+                if (len > 0 && len <= MAX_BUNDLE_ID) {
+                    fread(g_app_manager->bundles[i].bundle_identifier, 1, len, db_file);
                 }
                 
+                // 读取 bundle_path
                 fread(&len, sizeof(size_t), 1, db_file);
-                if (len > 0) {
-                    char* str = (char*)malloc(len);
-                    fread(str, 1, len, db_file);
-                    g_app_manager->bundles[i].bundle_version = str;
+                if (len > 0 && len <= MAX_BUNDLE_PATH) {
+                    fread(g_app_manager->bundles[i].bundle_path, 1, len, db_file);
                 }
                 
+                // 读取 bundle_name
                 fread(&len, sizeof(size_t), 1, db_file);
                 if (len > 0) {
                     char* str = (char*)malloc(len);
-                    fread(str, 1, len, db_file);
-                    g_app_manager->bundles[i].minimum_system_version = str;
+                    if (str) {
+                        fread(str, 1, len, db_file);
+                        g_app_manager->bundles[i].bundle_name = str;
+                    }
                 }
                 
+                // 读取 bundle_version
                 fread(&len, sizeof(size_t), 1, db_file);
                 if (len > 0) {
                     char* str = (char*)malloc(len);
-                    fread(str, 1, len, db_file);
-                    g_app_manager->bundles[i].icon_file = str;
+                    if (str) {
+                        fread(str, 1, len, db_file);
+                        g_app_manager->bundles[i].bundle_version = str;
+                    }
+                }
+                
+                // 读取 minimum_system_version
+                fread(&len, sizeof(size_t), 1, db_file);
+                if (len > 0) {
+                    char* str = (char*)malloc(len);
+                    if (str) {
+                        fread(str, 1, len, db_file);
+                        g_app_manager->bundles[i].minimum_system_version = str;
+                    }
+                }
+                
+                // 读取 icon_file
+                fread(&len, sizeof(size_t), 1, db_file);
+                if (len > 0) {
+                    char* str = (char*)malloc(len);
+                    if (str) {
+                        fread(str, 1, len, db_file);
+                        g_app_manager->bundles[i].icon_file = str;
+                    }
                 }
                 
                 g_app_manager->bundles[i].is_valid = true;
@@ -364,27 +384,38 @@ bool app_manager_save(void) {
     if (db_file) {
         fwrite(&g_app_manager->num_bundles, sizeof(int), 1, db_file);
         for (int i = 0; i < g_app_manager->num_bundles; i++) {
-            fwrite(g_app_manager->bundles[i].bundle_identifier, 1, strlen(g_app_manager->bundles[i].bundle_identifier) + 1, db_file);
-            fwrite(g_app_manager->bundles[i].bundle_path, 1, strlen(g_app_manager->bundles[i].bundle_path) + 1, db_file);
+            // 保存 bundle_identifier - 先保存长度
+            size_t len = strlen(g_app_manager->bundles[i].bundle_identifier) + 1;
+            fwrite(&len, sizeof(size_t), 1, db_file);
+            fwrite(g_app_manager->bundles[i].bundle_identifier, 1, len, db_file);
             
-            size_t len = g_app_manager->bundles[i].bundle_name ? strlen(g_app_manager->bundles[i].bundle_name) + 1 : 0;
+            // 保存 bundle_path - 先保存长度
+            len = strlen(g_app_manager->bundles[i].bundle_path) + 1;
+            fwrite(&len, sizeof(size_t), 1, db_file);
+            fwrite(g_app_manager->bundles[i].bundle_path, 1, len, db_file);
+            
+            // 保存 bundle_name
+            len = g_app_manager->bundles[i].bundle_name ? strlen(g_app_manager->bundles[i].bundle_name) + 1 : 0;
             fwrite(&len, sizeof(size_t), 1, db_file);
             if (len > 0) {
                 fwrite(g_app_manager->bundles[i].bundle_name, sizeof(char), len, db_file);
             }
             
+            // 保存 bundle_version
             len = g_app_manager->bundles[i].bundle_version ? strlen(g_app_manager->bundles[i].bundle_version) + 1 : 0;
             fwrite(&len, sizeof(size_t), 1, db_file);
             if (len > 0) {
                 fwrite(g_app_manager->bundles[i].bundle_version, sizeof(char), len, db_file);
             }
             
+            // 保存 minimum_system_version
             len = g_app_manager->bundles[i].minimum_system_version ? strlen(g_app_manager->bundles[i].minimum_system_version) + 1 : 0;
             fwrite(&len, sizeof(size_t), 1, db_file);
             if (len > 0) {
                 fwrite(g_app_manager->bundles[i].minimum_system_version, sizeof(char), len, db_file);
             }
             
+            // 保存 icon_file
             len = g_app_manager->bundles[i].icon_file ? strlen(g_app_manager->bundles[i].icon_file) + 1 : 0;
             fwrite(&len, sizeof(size_t), 1, db_file);
             if (len > 0) {
@@ -403,7 +434,7 @@ void app_manager_cleanup(void) {
     app_manager_save();
     
     for (int i = 0; i < g_app_manager->num_bundles; i++) {
-        app_bundle_free(&g_app_manager->bundles[i]);
+        app_bundle_free_resources(&g_app_manager->bundles[i]);
     }
     
     free(g_app_manager->bundles);
@@ -432,7 +463,7 @@ app_bundle* app_bundle_parse(const char* bundle_path) {
     return bundle;
 }
 
-void app_bundle_free(app_bundle* bundle) {
+void app_bundle_free_resources(app_bundle* bundle) {
     if (!bundle) return;
     free(bundle->bundle_name);
     free(bundle->bundle_version);
@@ -446,6 +477,17 @@ void app_bundle_free(app_bundle* bundle) {
         entry = next;
     }
     
+    bundle->bundle_name = NULL;
+    bundle->bundle_version = NULL;
+    bundle->minimum_system_version = NULL;
+    bundle->icon_file = NULL;
+    bundle->info_plist_entries = NULL;
+    bundle->num_plist_entries = 0;
+}
+
+void app_bundle_free(app_bundle* bundle) {
+    if (!bundle) return;
+    app_bundle_free_resources(bundle);
     free(bundle);
 }
 
@@ -529,6 +571,10 @@ bool app_bundle_install(const char* source_path) {
         return false;
     }
     
+    // 确保 bundle_path 是正确的目标路径
+    strncpy(bundle->bundle_path, dest_path, MAX_BUNDLE_PATH - 1);
+    bundle->bundle_path[MAX_BUNDLE_PATH - 1] = '\0';
+    
     if (g_app_manager->num_bundles >= g_app_manager->max_bundles) {
         size_t new_max = g_app_manager->max_bundles * 2;
         app_bundle* new_bundles = (app_bundle*)realloc(g_app_manager->bundles, 
@@ -540,7 +586,17 @@ bool app_bundle_install(const char* source_path) {
     }
     
     if (g_app_manager->num_bundles < g_app_manager->max_bundles) {
-        memcpy(&g_app_manager->bundles[g_app_manager->num_bundles], bundle, sizeof(app_bundle));
+        app_bundle* dest = &g_app_manager->bundles[g_app_manager->num_bundles];
+        // 深拷贝，而不是浅拷贝
+        memcpy(dest, bundle, sizeof(app_bundle));
+        // 重新分配字符串，避免 double free
+        dest->bundle_name = bundle->bundle_name ? strdup(bundle->bundle_name) : NULL;
+        dest->bundle_version = bundle->bundle_version ? strdup(bundle->bundle_version) : NULL;
+        dest->minimum_system_version = bundle->minimum_system_version ? strdup(bundle->minimum_system_version) : NULL;
+        dest->icon_file = bundle->icon_file ? strdup(bundle->icon_file) : NULL;
+        dest->info_plist_entries = NULL; // 暂时不处理 info_plist_entries
+        dest->num_plist_entries = 0;
+        
         g_app_manager->num_bundles++;
         fprintf(stdout, "Application installed successfully!\n");
     }
