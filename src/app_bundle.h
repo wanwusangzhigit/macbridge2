@@ -40,6 +40,7 @@ void app_manager_cleanup(void);
 bool app_manager_save(void);
 bool app_manager_load(void);
 app_bundle* app_bundle_parse(const char* bundle_path);
+void app_bundle_free_resources(app_bundle* bundle);
 void app_bundle_free(app_bundle* bundle);
 const char* app_bundle_get_info_value(const app_bundle* bundle, const char* key);
 char* app_bundle_get_executable_path(const app_bundle* bundle, char* buffer, size_t buffer_size);
