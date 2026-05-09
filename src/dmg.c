@@ -3,13 +3,20 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
 #ifdef __linux__
+#include <unistd.h>
 #include <lzma.h>
 #include <zlib.h>
+#define fseeko64 fseeko
+#define ftello64 ftello
 #elif defined(_WIN32)
 #include <windows.h>
+#include <zlib.h>
+#define fseeko64 _fseeki64
+#define ftello64 _ftelli64
+#else
+#include <unistd.h>
 #include <zlib.h>
 #endif
 
@@ -64,7 +71,7 @@ static uint8_t* decompress_xz_to_temp(FILE* dmg_file, uint64_t offset,
     uint8_t* compressed_data = (uint8_t*)malloc((size_t)compressed_len);
     if (!compressed_data) return NULL;
 
-    fseeko(dmg_file, (off_t)offset, SEEK_SET);
+    fseeko64(dmg_file, (off_t)offset, SEEK_SET);
     if (fread(compressed_data, 1, (size_t)compressed_len, dmg_file) != (size_t)compressed_len) {
         free(compressed_data);
         return NULL;
@@ -347,8 +354,8 @@ bool dmg_open(const char* path, dmg_context** ctx_out) {
     ctx->xml_plist = NULL;
     ctx->xml_length = 0;
 
-    fseeko(f, 0, SEEK_END);
-    uint64_t file_size = (uint64_t)ftello(f);
+    fseeko64(ctx->file, 0, SEEK_END);
+    uint64_t file_size = (uint64_t)ftello64(ctx->file);
 
     if (file_size < 512) {
         dmg_close(ctx);
@@ -356,7 +363,7 @@ bool dmg_open(const char* path, dmg_context** ctx_out) {
     }
 
     uint8_t footer_buf[512];
-    fseeko(f, (off_t)(file_size - 512), SEEK_SET);
+    fseeko64(f, (off_t)(file_size - 512), SEEK_SET);
     if (fread(footer_buf, 1, 512, f) != 512) {
         dmg_close(ctx);
         return false;
@@ -378,7 +385,7 @@ bool dmg_open(const char* path, dmg_context** ctx_out) {
         xml_offset = (uint64_t)ctx->footer.data_fork_length;
         if (xml_offset > file_size - 1024) xml_offset = file_size - 1024;
         while (xml_offset > 0) {
-            fseeko(f, (off_t)xml_offset, SEEK_SET);
+            fseeko64(f, (off_t)xml_offset, SEEK_SET);
             uint8_t peek[8];
             if (fread(peek, 1, 8, f) == 8 && peek[0] == '<' &&
                 (peek[1] == '?' || peek[1] == '!')) {
@@ -390,7 +397,7 @@ bool dmg_open(const char* path, dmg_context** ctx_out) {
 
         uint64_t end_pos = file_size - 512;
         while (xml_offset < end_pos) {
-            fseeko(f, (off_t)xml_offset, SEEK_SET);
+            fseeko64(f, (off_t)xml_offset, SEEK_SET);
             uint8_t peek[8];
             if (fread(peek, 1, 8, f) == 8 && peek[0] == '<' &&
                 (peek[1] == '?' || peek[1] == '!')) {
@@ -407,7 +414,7 @@ bool dmg_open(const char* path, dmg_context** ctx_out) {
         return false;
     }
 
-    fseeko(f, (off_t)xml_offset, SEEK_SET);
+    fseeko64(f, (off_t)xml_offset, SEEK_SET);
     size_t read_len = fread(ctx->xml_plist, 1, (size_t)xml_length, f);
     ctx->xml_plist[read_len] = '\0';
     ctx->xml_length = read_len + 1;
