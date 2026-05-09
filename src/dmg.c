@@ -12,7 +12,6 @@
 #define ftello64 ftello
 #elif defined(_WIN32)
 #include <windows.h>
-#include <zlib.h>
 #define fseeko64 _fseeki64
 #define ftello64 _ftelli64
 #else
@@ -199,6 +198,7 @@ static uint8_t* decompress_lzma_chunk(uint8_t* compressed, size_t compressed_len
 
 static uint8_t* decompress_zlib_chunk(uint8_t* compressed, size_t compressed_len,
                                        size_t* out_len, size_t expected_size) {
+#ifdef __linux__
     z_stream strm;
     memset(&strm, 0, sizeof(strm));
 
@@ -227,6 +227,12 @@ static uint8_t* decompress_zlib_chunk(uint8_t* compressed, size_t compressed_len
     *out_len = (size_t)(expected_size > 0 ? expected_size : compressed_len * 4 - strm.avail_out);
     inflateEnd(&strm);
     return decompressed;
+#else
+    (void)compressed;
+    (void)compressed_len;
+    *out_len = 0;
+    return NULL;
+#endif
 }
 
 static bool dmg_parse_partitions(dmg_context* ctx, uint8_t* xml_data, size_t xml_len) {
