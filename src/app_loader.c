@@ -261,6 +261,43 @@ int main(int argc, char* argv[]) {
         return 0;
     }
     
+    if (strcmp(command, "dmg-install") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Error: DMG path required\n\n");
+            print_usage(argv[0]);
+            log_cleanup();
+            config_cleanup();
+            return 1;
+        }
+        
+        const char* dmg_path = argv[2];
+        const char* output_dir = (argc > 3) ? argv[3] : "./extracted";
+        log_info("Installing from DMG: %s", dmg_path);
+        
+        dmg_context* ctx = NULL;
+        if (!dmg_open(dmg_path, &ctx)) {
+            fprintf(stderr, "Failed to open DMG file: %s\n", dmg_path);
+            log_cleanup();
+            config_cleanup();
+            return 1;
+        }
+        
+        dmg_print_info(ctx);
+        
+        if (ctx->is_raw_hfs) {
+            fprintf(stdout, "\nExtracting Mach-O files from raw HFS+ image...\n");
+            dmg_extract_from_raw_hfs(ctx, output_dir);
+        } else {
+            fprintf(stdout, "\nSearching for .app bundle in DMG...\n");
+            dmg_find_and_extract_app(ctx, "*.app", output_dir);
+        }
+        
+        dmg_close(ctx);
+        log_cleanup();
+        config_cleanup();
+        return 0;
+    }
+    
     if (strcmp(command, "list") == 0) {
         if (!app_manager_init(NULL)) {
             log_error("Failed to initialize app manager");
