@@ -59,5 +59,9 @@ bool dmg_open(const char* path, dmg_context** ctx);
 void dmg_close(dmg_context* ctx);
 bool dmg_print_info(dmg_context* ctx);
 bool dmg_install_app(const char* dmg_path, const char* install_dir);
+bool dmg_list_files(dmg_context* ctx);
+bool dmg_extract_partition(dmg_context* ctx, int partition_index, const char* output_dir);
+bool dmg_find_and_extract_app(dmg_context* ctx, const char* app_pattern, const char* output_dir);
+void dmg_set_verbose(bool verbose);
 
 #endif
