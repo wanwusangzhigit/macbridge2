@@ -57,7 +57,7 @@ static uint32_t be32(uint8_t* p) {
            ((uint32_t)p[2] << 8) | (uint32_t)p[3];
 }
 
-static uint16_t __attribute__((unused)) be16(uint8_t* p) {
+static uint16_t be16(uint8_t* p) {
     return ((uint16_t)p[0] << 8) | (uint16_t)p[1];
 }
 
@@ -187,7 +187,7 @@ static uint8_t* decompress_xz_to_temp(FILE* dmg_file, uint64_t offset,
 #endif
 }
 
-static __attribute__((unused)) uint8_t* decompress_lzma_chunk(uint8_t* compressed, size_t compressed_len,
+static uint8_t* decompress_lzma_chunk(uint8_t* compressed, size_t compressed_len,
                                        size_t* out_len, size_t expected_size) {
 #ifdef __linux__
     lzma_stream strm = LZMA_STREAM_INIT;
@@ -224,7 +224,7 @@ static __attribute__((unused)) uint8_t* decompress_lzma_chunk(uint8_t* compresse
 #endif
 }
 
-static __attribute__((unused)) uint8_t* decompress_zlib_chunk(uint8_t* compressed, size_t compressed_len,
+static uint8_t* decompress_zlib_chunk(uint8_t* compressed, size_t compressed_len,
                                        size_t* out_len, size_t expected_size) {
 #ifdef __linux__
     z_stream strm;

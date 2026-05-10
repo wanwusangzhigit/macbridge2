@@ -153,7 +153,7 @@ static uint32_t get_node_next_sibling(uint8_t* node) {
     return be32(node + 0x0A);
 }
 
-static uint32_t __attribute__((unused)) get_node_parent(uint8_t* node) {
+static uint32_t get_node_parent(uint8_t* node) {
     return be32(node + 0x04);
 }
 
@@ -182,7 +182,7 @@ static bool parse_hfsplus_name(const uint8_t* p, int len, char* out_name, int* o
     return true;
 }
 
-static bool __attribute__((unused)) parse_hfs_name(const uint8_t* p, int len, char* out_name, int* out_len) {
+static bool parse_hfs_name(const uint8_t* p, int len, char* out_name, int* out_len) {
     if (len < 1) return false;
     int name_len = p[0];
     if (name_len > len - 1) name_len = len - 1;
