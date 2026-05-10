@@ -9,14 +9,16 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <sys/types.h>
 #define fseeko64 fseeko
 #define ftello64 ftello
 #elif defined(_WIN32)
 #include <windows.h>
 #include <io.h>
+#include <sys/types.h>
 #define mkdir(path, mode) _mkdir(path)
-#define fseeko64 _fseeki64
-#define ftello64 _ftelli64
+static int fseeko64(FILE* f, int64_t offset, int whence) { return _fseeki64(f, offset, whence); }
+static int64_t ftello64(FILE* f) { return _ftelli64(f); }
 #endif
 
 static char g_error_msg[512] = {0};
@@ -70,7 +72,7 @@ static uint32_t get_block_offset(hfs_context* ctx, uint32_t block_num) {
 static bool read_volume_header(hfs_context* ctx) {
     uint8_t buf[512];
 
-    fseeko64(ctx->image, (off_t)ctx->partition_offset + 1024, SEEK_SET);
+    fseeko64(ctx->image, (int64_t)ctx->partition_offset + 1024, SEEK_SET);
     if (fread(buf, 1, 512, ctx->image) != 512) {
         hfs_set_error("Failed to read volume header");
         return false;
@@ -365,7 +367,7 @@ static uint8_t* read_extent_data(hfs_context* ctx, HFSPlusExtentRecord* extents,
 
             if (read_size > remaining) read_size = remaining;
 
-            fseeko64(ctx->image, (off_t)read_start, SEEK_SET);
+            fseeko64(ctx->image, (int64_t)read_start, SEEK_SET);
             size_t r = fread(buffer + buf_pos, 1, (size_t)read_size, ctx->image);
             if (r != (size_t)read_size) {
                 free(buffer);
