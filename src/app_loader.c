@@ -27,8 +27,9 @@ static void print_usage(const char* program_name) {
     fprintf(stdout, "Commands:\n");
     fprintf(stdout, "  test <macho_path>         Test loading a Mach-O file\n");
     fprintf(stdout, "  load <app_path> [args]   Load and run an app bundle\n");
-    fprintf(stdout, "  install <app_path>       Install an app bundle or DMG\n");
-    fprintf(stdout, "  dmg-info <dmg_path>      Show DMG image information\n");
+    fprintf(stdout, "  install <app_path>        Install an app bundle or DMG\n");
+    fprintf(stdout, "  dmg-info <dmg_path>       Show DMG image information\n");
+    fprintf(stdout, "  dmg-list <dmg_path>       List files in DMG image\n");
     fprintf(stdout, "  list                     List installed applications\n");
     fprintf(stdout, "  uninstall <bundle_id>     Uninstall an application\n");
     fprintf(stdout, "  version                  Show version information\n");
@@ -227,6 +228,33 @@ int main(int argc, char* argv[]) {
         }
         
         dmg_print_info(ctx);
+        dmg_close(ctx);
+        log_cleanup();
+        config_cleanup();
+        return 0;
+    }
+    
+    if (strcmp(command, "dmg-list") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "Error: DMG path required\n\n");
+            print_usage(argv[0]);
+            log_cleanup();
+            config_cleanup();
+            return 1;
+        }
+        
+        const char* dmg_path = argv[2];
+        log_info("Listing files in DMG: %s", dmg_path);
+        
+        dmg_context* ctx = NULL;
+        if (!dmg_open(dmg_path, &ctx)) {
+            fprintf(stderr, "Failed to open DMG file: %s\n", dmg_path);
+            log_cleanup();
+            config_cleanup();
+            return 1;
+        }
+        
+        dmg_list_files(ctx);
         dmg_close(ctx);
         log_cleanup();
         config_cleanup();

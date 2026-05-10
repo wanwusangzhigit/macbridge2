@@ -1,8 +1,10 @@
 #include "dmg.h"
+#include "hfs.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <ctype.h>
 
 #ifdef __linux__
 #include <unistd.h>
@@ -478,6 +480,7 @@ bool dmg_install_app(const char* dmg_path, const char* install_dir) {
     dmg_print_info(ctx);
 
     uint64_t data_fork_len = be64((uint8_t*)&ctx->footer.data_fork_length);
+
     if (data_fork_len > 0 && ctx->footer.data_fork_offset == 0) {
         fprintf(stdout, "\nDecompressing data fork...\n");
 
@@ -487,20 +490,261 @@ bool dmg_install_app(const char* dmg_path, const char* install_dir) {
                                                        data_fork_len);
         if (decompressed && decompressed_len > 0) {
             fprintf(stdout, "Decompressed: %zu bytes\n", decompressed_len);
-            fprintf(stdout, "\nNote: HFS+ filesystem mounting not yet implemented.\n");
-            fprintf(stdout, "To extract apps manually:\n");
-            fprintf(stdout, "  1. Mount the DMG using hdiutil on macOS\n");
-            fprintf(stdout, "  2. Copy the .app bundle to your Applications folder\n");
-            fprintf(stdout, "  3. Or use 7z/hfsplus to extract on Linux\n\n");
+
+            hfs_context* hfs_ctx = NULL;
+            if (hfs_mount(decompressed, decompressed_len, &hfs_ctx)) {
+                fprintf(stdout, "\nHFS+ filesystem detected!\n");
+
+                if (install_dir == NULL) {
+                    install_dir = "./Applications";
+                }
+
+                fprintf(stdout, "\nExtracting applications to: %s\n", install_dir);
+
+                mkdir(install_dir, 0755);
+                dmg_find_and_extract_app(ctx, "*.app", install_dir);
+
+                hfs_unmount(hfs_ctx);
+            } else {
+                fprintf(stdout, "\nSearching for app bundles in decompressed data...\n");
+                dmg_find_and_extract_app(ctx, "*.app", install_dir ? install_dir : "./Applications");
+            }
+
             free(decompressed);
         } else {
             fprintf(stderr, "Decompression failed\n");
+            dmg_close(ctx);
+            return false;
         }
     } else {
         fprintf(stdout, "\nNote: This DMG uses an uncompressed data fork.\n");
-        fprintf(stdout, "HFS+ filesystem support is needed for app extraction.\n");
+        fprintf(stdout, "Attempting to mount HFS+ partition directly...\n");
+
+        if (ctx->partition_count > 0) {
+            for (int i = 0; i < ctx->partition_count; i++) {
+                dmg_partition* part = &ctx->partitions[i];
+                if (strstr(part->name, "Apple_HFS") != NULL ||
+                    strstr(part->name, "disk image") != NULL) {
+                    fprintf(stdout, "Found HFS+ partition at index %d\n", i);
+                    dmg_extract_partition(ctx, i, install_dir ? install_dir : "./Applications");
+                    break;
+                }
+            }
+        }
     }
 
     dmg_close(ctx);
     return true;
+}
+
+static void ensure_directory(const char* path) {
+    char dir[1024] = {0};
+    const char* p = path;
+    char* q = dir;
+
+    while (*p) {
+        *q++ = *p++;
+        if (*p == '/' || *p == '\\' || *p == '\0') {
+            *q = '\0';
+            mkdir(dir, 0755);
+        }
+    }
+}
+
+bool dmg_list_files(dmg_context* ctx) {
+    if (!ctx) return false;
+
+    uint64_t data_fork_len = be64((uint8_t*)&ctx->footer.data_fork_length);
+
+    if (data_fork_len == 0 || ctx->footer.data_fork_offset != 0) {
+        fprintf(stderr, "Compressed data fork not available\n");
+        return false;
+    }
+
+    size_t decompressed_len = 0;
+    uint8_t* decompressed = decompress_xz_to_temp(ctx->file, 0, data_fork_len,
+                                                   &decompressed_len,
+                                                   data_fork_len);
+    if (!decompressed || decompressed_len == 0) {
+        fprintf(stderr, "Failed to decompress data fork\n");
+        return false;
+    }
+
+    hfs_context* hfs_ctx = NULL;
+    if (hfs_mount(decompressed, decompressed_len, &hfs_ctx)) {
+        fprintf(stdout, "\nHFS+ filesystem detected! Listing root directory:\n");
+        fprintf(stdout, "===========================================\n");
+        hfs_list_directory(hfs_ctx, kHFSRootFolderID);
+        hfs_unmount(hfs_ctx);
+    } else {
+        fprintf(stdout, "\nScanning decompressed data for .app bundles...\n");
+        fprintf(stdout, "===========================================\n");
+
+        char* data = (char*)decompressed;
+        for (size_t i = 0; i < decompressed_len - 4; i++) {
+            if (data[i] == '.' && data[i+1] == 'a' && data[i+2] == 'p' && data[i+3] == 'p') {
+                char* start = data + i;
+                char* end = start;
+                while (end < data + decompressed_len && *end != '/' && *end != '\0') end++;
+                if (end - start > 5) {
+                    char name[256] = {0};
+                    size_t len = end - start;
+                    if (len > 255) len = 255;
+                    memcpy(name, start, len);
+                    fprintf(stdout, "Found: %s\n", name);
+                    i = end - data;
+                }
+            }
+        }
+    }
+
+    if (decompressed) free(decompressed);
+    return true;
+}
+
+bool dmg_extract_partition(dmg_context* ctx, int partition_index, const char* output_dir) {
+    if (!ctx || partition_index < 0 || partition_index >= ctx->partition_count) {
+        fprintf(stderr, "Invalid partition index\n");
+        return false;
+    }
+
+    dmg_partition* part = &ctx->partitions[partition_index];
+    fprintf(stdout, "Extracting partition: %s\n", part->name);
+    fprintf(stdout, "  Offset: %lu, Length: %lu\n", (unsigned long)part->offset, (unsigned long)part->length);
+
+    uint64_t data_fork_len = be64((uint8_t*)&ctx->footer.data_fork_length);
+
+    if (data_fork_len > 0 && ctx->footer.data_fork_offset == 0) {
+        size_t decompressed_len = 0;
+        uint8_t* decompressed = decompress_xz_to_temp(ctx->file, 0, data_fork_len,
+                                                       &decompressed_len,
+                                                       data_fork_len);
+        if (decompressed && decompressed_len > 0) {
+            fprintf(stdout, "Decompressed %zu bytes\n", decompressed_len);
+
+            char output_path[1024];
+            snprintf(output_path, sizeof(output_path), "%s/partition_%d.img",
+                     output_dir ? output_dir : ".", partition_index);
+
+            FILE* out = fopen(output_path, "wb");
+            if (out) {
+                fwrite(decompressed, 1, decompressed_len, out);
+                fclose(out);
+                fprintf(stdout, "Saved to: %s\n", output_path);
+            }
+
+            hfs_context* hfs_ctx = NULL;
+            if (hfs_mount(decompressed, decompressed_len, &hfs_ctx)) {
+                fprintf(stdout, "\nHFS+ detected in partition. Extracting files...\n");
+                hfs_extract_app_bundle(hfs_ctx, "*.app", output_dir);
+                hfs_unmount(hfs_ctx);
+            }
+
+            free(decompressed);
+        }
+    }
+
+    return true;
+}
+
+bool dmg_find_and_extract_app(dmg_context* ctx, const char* app_pattern, const char* output_dir) {
+    if (!ctx) return false;
+
+    fprintf(stdout, "\nSearching for app bundles matching: %s\n", app_pattern);
+
+    uint64_t data_fork_len = be64((uint8_t*)&ctx->footer.data_fork_length);
+
+    if (data_fork_len == 0 || ctx->footer.data_fork_offset != 0) {
+        fprintf(stderr, "No decompressed data available\n");
+        return false;
+    }
+
+    size_t decompressed_len = 0;
+    uint8_t* decompressed = decompress_xz_to_temp(ctx->file, 0, data_fork_len,
+                                                   &decompressed_len,
+                                                   data_fork_len);
+    if (!decompressed || decompressed_len == 0) {
+        fprintf(stderr, "Failed to decompress data fork\n");
+        return false;
+    }
+
+    const char* target_dir = output_dir ? output_dir : "./Applications";
+    ensure_directory(target_dir);
+
+    hfs_context* hfs_ctx = NULL;
+    if (hfs_mount(decompressed, decompressed_len, &hfs_ctx)) {
+        fprintf(stdout, "Mounted HFS+ filesystem successfully\n");
+
+        hfs_file_info result;
+        if (hfs_find_app(hfs_ctx, &result)) {
+            fprintf(stdout, "Found app: %s (CNID: %u)\n", result.name, result.cnid);
+
+            char app_bundle_name[256] = {0};
+            strncpy(app_bundle_name, result.name, sizeof(app_bundle_name) - 1);
+
+            if (hfs_extract_app_bundle(hfs_ctx, app_bundle_name, target_dir)) {
+                fprintf(stdout, "\nSuccessfully extracted: %s to %s\n", app_bundle_name, target_dir);
+            }
+        } else {
+            fprintf(stdout, "\nNo .app bundle found at root level\n");
+            fprintf(stdout, "Listing root directory contents:\n");
+            hfs_list_directory(hfs_ctx, kHFSRootFolderID);
+        }
+
+        hfs_unmount(hfs_ctx);
+    } else {
+        fprintf(stdout, "HFS+ mount failed, scanning raw data...\n");
+
+        char* data = (char*)decompressed;
+        int found_count = 0;
+
+        for (size_t i = 0; i < decompressed_len - 5 && found_count < 10; i++) {
+            if (data[i] == '/' && data[i+1] == 'A' && data[i+2] == 'p' &&
+                data[i+3] == 'p' && data[i+4] == 'l' && data[i+5] == 'i') {
+
+                char* start = data + i;
+                char* end = start + 1;
+                while (end < data + decompressed_len && *end != '\0' &&
+                       (isalnum((unsigned char)*end) || *end == '.' || *end == '_' || *end == '-' || *end == '/')) {
+                    end++;
+                }
+
+                size_t path_len = end - start;
+                if (path_len > 5 && path_len < 500) {
+                    char path[512] = {0};
+                    memcpy(path, start, path_len);
+
+                    if (path_len > 4 && strcmp(path + path_len - 4, ".app") == 0) {
+                        char app_name[256] = {0};
+                        const char* last_slash = strrchr(path, '/');
+                        if (last_slash) {
+                            strncpy(app_name, last_slash + 1, sizeof(app_name) - 1);
+                        }
+
+                        fprintf(stdout, "Found app bundle: %s\n", app_name);
+
+                        char out_path[1024];
+                        snprintf(out_path, sizeof(out_path), "%s/%s", target_dir, app_name);
+                        ensure_directory(out_path);
+
+                        found_count++;
+                    }
+                }
+            }
+        }
+
+        if (found_count == 0) {
+            fprintf(stdout, "No .app bundles found in this DMG\n");
+        } else {
+            fprintf(stdout, "\nFound %d app bundle(s). Note: Full extraction requires HFS+ mount.\n", found_count);
+            fprintf(stdout, "You can extract using: hdiutil attach %s (on macOS)\n", ctx->path);
+        }
+    }
+
+    if (decompressed) free(decompressed);
+    return true;
+}
+
+void dmg_set_verbose(bool verbose) {
+    (void)verbose;
 }
