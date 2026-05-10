@@ -55,7 +55,7 @@ static uint32_t be32(uint8_t* p) {
            ((uint32_t)p[2] << 8) | (uint32_t)p[3];
 }
 
-static uint16_t be16(uint8_t* p) {
+static uint16_t __attribute__((unused)) be16(uint8_t* p) {
     return ((uint16_t)p[0] << 8) | (uint16_t)p[1];
 }
 
@@ -100,7 +100,7 @@ static uint8_t* decompress_xz_to_temp(FILE* dmg_file, uint64_t offset,
     }
 
     lzma_action action = LZMA_RUN;
-    size_t in_pos = 0, out_pos = 0;
+    size_t out_pos = 0;
     int streams_processed = 0;
     strm.next_in = compressed_data;
     strm.avail_in = (size_t)compressed_len;
@@ -161,7 +161,7 @@ static uint8_t* decompress_xz_to_temp(FILE* dmg_file, uint64_t offset,
 #endif
 }
 
-static uint8_t* decompress_lzma_chunk(uint8_t* compressed, size_t compressed_len,
+static __attribute__((unused)) uint8_t* decompress_lzma_chunk(uint8_t* compressed, size_t compressed_len,
                                        size_t* out_len, size_t expected_size) {
 #ifdef __linux__
     lzma_stream strm = LZMA_STREAM_INIT;
@@ -198,7 +198,7 @@ static uint8_t* decompress_lzma_chunk(uint8_t* compressed, size_t compressed_len
 #endif
 }
 
-static uint8_t* decompress_zlib_chunk(uint8_t* compressed, size_t compressed_len,
+static __attribute__((unused)) uint8_t* decompress_zlib_chunk(uint8_t* compressed, size_t compressed_len,
                                        size_t* out_len, size_t expected_size) {
 #ifdef __linux__
     z_stream strm;
@@ -230,9 +230,6 @@ static uint8_t* decompress_zlib_chunk(uint8_t* compressed, size_t compressed_len
     inflateEnd(&strm);
     return decompressed;
 #else
-    (void)compressed;
-    (void)compressed_len;
-    *out_len = 0;
     return NULL;
 #endif
 }
@@ -300,7 +297,10 @@ static bool dmg_parse_partitions(dmg_context* ctx, uint8_t* xml_data, size_t xml
             }
 
             if (strcmp(key, "Name") == 0) {
-                strncpy(part->name, value, sizeof(part->name) - 1);
+                size_t copy_len = strlen(value);
+                if (copy_len >= sizeof(part->name)) copy_len = sizeof(part->name) - 1;
+                memcpy(part->name, value, copy_len);
+                part->name[copy_len] = '\0';
             } else if (strcmp(key, "BlockSize") == 0) {
             } else if (strcmp(key, "BlockOffset") == 0) {
                 if (strlen(value) > 0) {
@@ -680,7 +680,10 @@ bool dmg_find_and_extract_app(dmg_context* ctx, const char* app_pattern, const c
             fprintf(stdout, "Found app: %s (CNID: %u)\n", result.name, result.cnid);
 
             char app_bundle_name[256] = {0};
-            strncpy(app_bundle_name, result.name, sizeof(app_bundle_name) - 1);
+            size_t copy_len = strlen(result.name);
+            if (copy_len >= sizeof(app_bundle_name)) copy_len = sizeof(app_bundle_name) - 1;
+            memcpy(app_bundle_name, result.name, copy_len);
+            app_bundle_name[copy_len] = '\0';
 
             if (hfs_extract_app_bundle(hfs_ctx, app_bundle_name, target_dir)) {
                 fprintf(stdout, "\nSuccessfully extracted: %s to %s\n", app_bundle_name, target_dir);
