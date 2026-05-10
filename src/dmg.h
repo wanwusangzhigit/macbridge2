@@ -53,6 +53,8 @@ typedef struct {
     int partition_count;
     uint8_t* xml_plist;
     size_t xml_length;
+    bool is_raw_hfs;
+    uint64_t partition_offset;
 } dmg_context;
 
 bool dmg_open(const char* path, dmg_context** ctx);
@@ -62,6 +64,7 @@ bool dmg_install_app(const char* dmg_path, const char* install_dir);
 bool dmg_list_files(dmg_context* ctx);
 bool dmg_extract_partition(dmg_context* ctx, int partition_index, const char* output_dir);
 bool dmg_find_and_extract_app(dmg_context* ctx, const char* app_pattern, const char* output_dir);
+bool dmg_extract_from_raw_hfs(dmg_context* ctx, const char* output_dir);
 void dmg_set_verbose(bool verbose);
 
 #endif
