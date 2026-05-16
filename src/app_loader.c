@@ -6,11 +6,12 @@
 #include "vfs.h"
 #include "util.h"
 #include "dmg.h"
+#include "ui.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define VERSION "0.7.0"
+#define VERSION "0.8.0"
 
 static void print_banner(void) {
     fprintf(stdout, "\n");
@@ -34,11 +35,17 @@ static void print_usage(const char* program_name) {
     fprintf(stdout, "  uninstall <bundle_id>     Uninstall an application\n");
     fprintf(stdout, "  version                  Show version information\n");
     fprintf(stdout, "  help                     Show this help message\n");
+    fprintf(stdout, "\n");
+    fprintf(stdout, "Interactive Mode (no arguments required):\n");
+    fprintf(stdout, "  %s                 Launch interactive UI menu\n", program_name);
+    fprintf(stdout, "  %s --gui           Launch interactive UI menu\n", program_name);
+    fprintf(stdout, "  %s --interactive    Launch interactive UI menu\n", program_name);
     fprintf(stdout, "\nExamples:\n");
     fprintf(stdout, "  %s test MyApp.app/Contents/MacOS/MyApp\n", program_name);
     fprintf(stdout, "  %s install MyApp.app\n", program_name);
     fprintf(stdout, "  %s list\n", program_name);
     fprintf(stdout, "  %s uninstall com.example.MyApp\n", program_name);
+    fprintf(stdout, "  %s\n", program_name);
     fprintf(stdout, "\nFor more information, see README.md\n");
 }
 
@@ -60,11 +67,14 @@ int main(int argc, char* argv[]) {
     config_init();
     log_init(NULL, LOG_LEVEL_INFO);
     
-    if (argc < 2) {
-        print_usage(argv[0]);
+    if (argc < 2 || strcmp(argv[1], "--gui") == 0 || strcmp(argv[1], "--interactive") == 0 || strcmp(argv[1], "-i") == 0) {
+        print_banner();
+        printf("  Starting interactive mode...\n\n");
+        log_info("Starting interactive UI mode");
+        int result = ui_run_interactive_mode();
         log_cleanup();
         config_cleanup();
-        return 1;
+        return result;
     }
     
     const char* command = argv[1];
