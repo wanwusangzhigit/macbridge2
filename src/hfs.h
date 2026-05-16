@@ -154,6 +154,7 @@ typedef struct {
 } hfs_context;
 
 bool hfs_mount(uint8_t* image_data, size_t image_size, hfs_context** ctx_out);
+bool hfs_mount_from_file(FILE* image_file, uint64_t partition_offset, uint32_t block_size, hfs_context** ctx_out);
 void hfs_unmount(hfs_context* ctx);
 bool hfs_list_directory(hfs_context* ctx, uint32_t dir_id);
 bool hfs_find_app(hfs_context* ctx, hfs_file_info* result);

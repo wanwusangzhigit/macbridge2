@@ -39,7 +39,7 @@ static uint32_t be32(uint8_t* p) {
            ((uint32_t)p[2] << 8) | (uint32_t)p[3];
 }
 
-static uint16_t be16(uint8_t* p) {
+static uint16_t be16(const uint8_t* p) {
     return ((uint16_t)p[0] << 8) | (uint16_t)p[1];
 }
 
@@ -153,10 +153,6 @@ static uint32_t get_node_next_sibling(uint8_t* node) {
     return be32(node + 0x0A);
 }
 
-static uint32_t get_node_parent(uint8_t* node) {
-    return be32(node + 0x04);
-}
-
 static bool parse_hfsplus_name(const uint8_t* p, int len, char* out_name, int* out_len) {
     if (len < 2) return false;
 
@@ -179,17 +175,6 @@ static bool parse_hfsplus_name(const uint8_t* p, int len, char* out_name, int* o
     }
     out_name[j] = '\0';
     *out_len = j;
-    return true;
-}
-
-static bool parse_hfs_name(const uint8_t* p, int len, char* out_name, int* out_len) {
-    if (len < 1) return false;
-    int name_len = p[0];
-    if (name_len > len - 1) name_len = len - 1;
-    if (name_len > 255) name_len = 255;
-    memcpy(out_name, p + 1, name_len);
-    out_name[name_len] = '\0';
-    *out_len = name_len;
     return true;
 }
 
@@ -233,6 +218,7 @@ static bool search_catalog(hfs_context* ctx, uint32_t node_num, uint32_t parent_
                         result->cnid = cnid;
                         result->parent_cnid = record_parent_id;
                         strncpy(result->name, name, sizeof(result->name) - 1);
+                        result->name[sizeof(result->name) - 1] = '\0';
                         result->is_directory = 1;
                         result->size = 0;
                         return true;
@@ -248,6 +234,7 @@ static bool search_catalog(hfs_context* ctx, uint32_t node_num, uint32_t parent_
                         result->cnid = cnid;
                         result->parent_cnid = record_parent_id;
                         strncpy(result->name, name, sizeof(result->name) - 1);
+                        result->name[sizeof(result->name) - 1] = '\0';
                         result->is_directory = 0;
 
                         memcpy(&result->data_extents, record + key_len + 12, sizeof(HFSPlusExtentRecord));

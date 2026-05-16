@@ -13,11 +13,11 @@ void vfs_init(void) {
     char current_path[4096];
     if (getcwd(current_path, sizeof(current_path))) {
         // 创建默认的目录结构
-        char lib_path[4100];
+        char lib_path[8192];
         snprintf(lib_path, sizeof(lib_path), "%s/lib", current_path);
         mkdir(lib_path, 0755);
         
-        char app_path[4100];
+        char app_path[8192];
         snprintf(app_path, sizeof(app_path), "%s/Applications", current_path);
         mkdir(app_path, 0755);
     }

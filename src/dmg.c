@@ -30,6 +30,8 @@
 #define BLOCK_TYPE_NULL 7
 #define BLOCK_TYPE_END 8
 
+#define HFSPLUS_MAGIC_BE 0x482B
+
 typedef struct {
     uint32_t block_type;
     uint32_t block_number;
@@ -55,14 +57,34 @@ static uint32_t be32(uint8_t* p) {
            ((uint32_t)p[2] << 8) | (uint32_t)p[3];
 }
 
-static uint16_t be16(uint8_t* p) {
-    return ((uint16_t)p[0] << 8) | (uint16_t)p[1];
-}
-
 static bool is_xz_compressed(uint8_t* data, size_t len) {
     if (len < 6) return false;
     return data[0] == 0xFD && data[1] == '7' && data[2] == 'z' &&
            data[3] == 'X' && data[4] == 'Z' && data[5] == 0x00;
+}
+
+static bool is_raw_hfs_image(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return false;
+    
+    uint8_t buf[512];
+    bool is_hfs = false;
+    
+    if (fread(buf, 1, 512, f) == 512) {
+        uint16_t magic_be = (buf[0] << 8) | buf[1];
+        if (magic_be == HFSPLUS_MAGIC_BE) {
+            is_hfs = true;
+        } else if (fseeko64(f, 36 * 512, SEEK_SET) == 0 && 
+                   fread(buf, 1, 512, f) == 512) {
+            magic_be = (buf[0] << 8) | buf[1];
+            if (magic_be == HFSPLUS_MAGIC_BE) {
+                is_hfs = true;
+            }
+        }
+    }
+    
+    fclose(f);
+    return is_hfs;
 }
 
 static uint8_t* decompress_xz_to_temp(FILE* dmg_file, uint64_t offset,
@@ -100,7 +122,7 @@ static uint8_t* decompress_xz_to_temp(FILE* dmg_file, uint64_t offset,
     }
 
     lzma_action action = LZMA_RUN;
-    size_t in_pos = 0, out_pos = 0;
+    size_t out_pos = 0;
     int streams_processed = 0;
     strm.next_in = compressed_data;
     strm.avail_in = (size_t)compressed_len;
@@ -157,82 +179,6 @@ static uint8_t* decompress_xz_to_temp(FILE* dmg_file, uint64_t offset,
     free(compressed_data);
     free(decompressed);
     *out_decompressed_len = 0;
-    return NULL;
-#endif
-}
-
-static uint8_t* decompress_lzma_chunk(uint8_t* compressed, size_t compressed_len,
-                                       size_t* out_len, size_t expected_size) {
-#ifdef __linux__
-    lzma_stream strm = LZMA_STREAM_INIT;
-    lzma_ret ret = lzma_alone_decoder(&strm, UINT64_MAX);
-
-    if (ret != LZMA_OK) {
-        return NULL;
-    }
-
-    uint8_t* decompressed = (uint8_t*)malloc(expected_size > 0 ? expected_size : compressed_len * 4);
-    if (!decompressed) {
-        lzma_end(&strm);
-        return NULL;
-    }
-
-    strm.next_in = compressed;
-    strm.avail_in = compressed_len;
-    strm.next_out = decompressed;
-    strm.avail_out = expected_size > 0 ? expected_size : compressed_len * 4;
-
-    ret = lzma_code(&strm, LZMA_RUN);
-
-    if (ret != LZMA_STREAM_END && expected_size > 0 && ret != LZMA_OK) {
-        free(decompressed);
-        lzma_end(&strm);
-        return NULL;
-    }
-
-    *out_len = (size_t)(expected_size > 0 ? expected_size : compressed_len * 4 - strm.avail_out);
-    lzma_end(&strm);
-    return decompressed;
-#else
-    return NULL;
-#endif
-}
-
-static uint8_t* decompress_zlib_chunk(uint8_t* compressed, size_t compressed_len,
-                                       size_t* out_len, size_t expected_size) {
-#ifdef __linux__
-    z_stream strm;
-    memset(&strm, 0, sizeof(strm));
-
-    if (inflateInit(&strm) != Z_OK) {
-        return NULL;
-    }
-
-    uint8_t* decompressed = (uint8_t*)malloc(expected_size > 0 ? expected_size : compressed_len * 4);
-    if (!decompressed) {
-        inflateEnd(&strm);
-        return NULL;
-    }
-
-    strm.next_in = compressed;
-    strm.avail_in = (uLong)compressed_len;
-    strm.next_out = decompressed;
-    strm.avail_out = (uLong)(expected_size > 0 ? expected_size : compressed_len * 4);
-
-    int ret = inflate(&strm, Z_FINISH);
-    if (ret != Z_STREAM_END && ret != Z_OK && expected_size > 0) {
-        free(decompressed);
-        inflateEnd(&strm);
-        return NULL;
-    }
-
-    *out_len = (size_t)(expected_size > 0 ? expected_size : compressed_len * 4 - strm.avail_out);
-    inflateEnd(&strm);
-    return decompressed;
-#else
-    (void)compressed;
-    (void)compressed_len;
-    *out_len = 0;
     return NULL;
 #endif
 }
@@ -300,7 +246,10 @@ static bool dmg_parse_partitions(dmg_context* ctx, uint8_t* xml_data, size_t xml
             }
 
             if (strcmp(key, "Name") == 0) {
-                strncpy(part->name, value, sizeof(part->name) - 1);
+                size_t copy_len = strlen(value);
+                if (copy_len >= sizeof(part->name)) copy_len = sizeof(part->name) - 1;
+                memcpy(part->name, value, copy_len);
+                part->name[copy_len] = '\0';
             } else if (strcmp(key, "BlockSize") == 0) {
             } else if (strcmp(key, "BlockOffset") == 0) {
                 if (strlen(value) > 0) {
@@ -361,15 +310,25 @@ bool dmg_open(const char* path, dmg_context** ctx_out) {
     ctx->partition_count = 0;
     ctx->xml_plist = NULL;
     ctx->xml_length = 0;
-
+    ctx->is_raw_hfs = false;
+    ctx->partition_offset = 0;
+    
     fseeko64(ctx->file, 0, SEEK_END);
     uint64_t file_size = (uint64_t)ftello64(ctx->file);
-
+    
     if (file_size < 512) {
         dmg_close(ctx);
         return false;
     }
-
+    
+    if (is_raw_hfs_image(path)) {
+        ctx->is_raw_hfs = true;
+        ctx->partition_offset = 36 * 512;
+        fprintf(stderr, "Detected raw HFS+ image at partition offset %lu\n", ctx->partition_offset);
+        *ctx_out = ctx;
+        return true;
+    }
+    
     uint8_t footer_buf[512];
     fseeko64(f, (off_t)(file_size - 512), SEEK_SET);
     if (fread(footer_buf, 1, 512, f) != 512) {
@@ -443,9 +402,17 @@ void dmg_close(dmg_context* ctx) {
 
 bool dmg_print_info(dmg_context* ctx) {
     if (!ctx) return false;
-
+    
     fprintf(stdout, "=== DMG Image Info ===\n");
     fprintf(stdout, "Path: %s\n", ctx->path);
+    
+    if (ctx->is_raw_hfs) {
+        fprintf(stdout, "Type: Raw HFS+ disk image\n");
+        fprintf(stdout, "Partition Offset: %lu (LBA 36)\n", ctx->partition_offset);
+        fprintf(stdout, "HFS+ filesystem detected!\n");
+        return true;
+    }
+    
     fprintf(stdout, "Version: %u\n", be32((uint8_t*)&ctx->footer.version));
     fprintf(stdout, "Header Size: %u\n", be32((uint8_t*)&ctx->footer.header_size));
     fprintf(stdout, "Total Sectors: %lu\n", (unsigned long)be64((uint8_t*)&ctx->footer.sector_count));
@@ -680,7 +647,10 @@ bool dmg_find_and_extract_app(dmg_context* ctx, const char* app_pattern, const c
             fprintf(stdout, "Found app: %s (CNID: %u)\n", result.name, result.cnid);
 
             char app_bundle_name[256] = {0};
-            strncpy(app_bundle_name, result.name, sizeof(app_bundle_name) - 1);
+            size_t copy_len = strlen(result.name);
+            if (copy_len >= sizeof(app_bundle_name)) copy_len = sizeof(app_bundle_name) - 1;
+            memcpy(app_bundle_name, result.name, copy_len);
+            app_bundle_name[copy_len] = '\0';
 
             if (hfs_extract_app_bundle(hfs_ctx, app_bundle_name, target_dir)) {
                 fprintf(stdout, "\nSuccessfully extracted: %s to %s\n", app_bundle_name, target_dir);
@@ -747,4 +717,142 @@ bool dmg_find_and_extract_app(dmg_context* ctx, const char* app_pattern, const c
 
 void dmg_set_verbose(bool verbose) {
     (void)verbose;
+}
+
+bool dmg_extract_from_raw_hfs(dmg_context* ctx, const char* output_dir) {
+    if (!ctx || !ctx->is_raw_hfs) {
+        fprintf(stderr, "Not a raw HFS+ image\n");
+        return false;
+    }
+    
+    const char* target_dir = output_dir ? output_dir : "./extracted";
+    ensure_directory(target_dir);
+    
+    fprintf(stdout, "\nExtracting from raw HFS+ image: %s\n", ctx->path);
+    fprintf(stdout, "Partition offset: %lu\n", (unsigned long)ctx->partition_offset);
+    fprintf(stdout, "Output directory: %s\n\n", target_dir);
+    
+    fseeko64(ctx->file, 0, SEEK_END);
+    uint64_t file_size = (uint64_t)ftello64(ctx->file);
+    fprintf(stdout, "Image size: %lu bytes\n\n", (unsigned long)file_size);
+    
+    fprintf(stdout, "Scanning for Mach-O files and TRAE app bundles...\n");
+    fprintf(stdout, "===========================================\n");
+    
+    FILE* strings_out = fopen("./extracted/trae_strings.txt", "w");
+    if (!strings_out) {
+        fprintf(stderr, "Failed to create strings output file\n");
+    }
+    
+    uint8_t* buffer = (uint8_t*)malloc(8 * 1024 * 1024);
+    if (!buffer) {
+        fprintf(stderr, "Failed to allocate buffer\n");
+        if (strings_out) fclose(strings_out);
+        return false;
+    }
+    
+    int file_index = 0;
+    int macho_found = 0;
+    int strings_found = 0;
+    char last_string[256] = {0};
+    uint64_t last_string_offset = 0;
+    
+    for (uint64_t offset = 0; offset < file_size && file_index < 200; ) {
+        uint64_t remaining = file_size - offset;
+        size_t read_size = (remaining > 8 * 1024 * 1024) ? 8 * 1024 * 1024 : (size_t)remaining;
+        
+        fseeko64(ctx->file, (off_t)offset, SEEK_SET);
+        size_t actual_read = fread(buffer, 1, read_size, ctx->file);
+        
+        if (actual_read < 64) break;
+        
+        for (size_t i = 0; i < actual_read - 4; i += 4) {
+            uint32_t magic = *(uint32_t*)(buffer + i);
+            
+            if (magic == 0xFEEDFACF || magic == 0xCFFAEDFE ||
+                magic == 0xFEEDFACE || magic == 0xCEFAEDFE) {
+                
+                uint32_t cputype = *(uint32_t*)(buffer + i + 4);
+                uint32_t filetype = *(uint32_t*)(buffer + i + 12);
+                
+                size_t est_end = offset + i + 64 * 1024 * 1024;
+                if (est_end > file_size) est_end = file_size;
+                size_t extracted_size = (size_t)(est_end - (offset + i));
+                
+                const char* arch = "unknown";
+                if ((cputype & 0xFF) == 0x00) arch = "arm64";
+                else if ((cputype & 0xFF) == 0x01) arch = "x86";
+                
+                const char* type = "unknown";
+                if (filetype == 2) type = "executable";
+                else if (filetype == 6) type = "dylib";
+                else if (filetype == 8) type = "bundle";
+                
+                char name[256];
+                snprintf(name, sizeof(name), "macho_%04d_%s_%s.bin", 
+                        file_index, arch, type);
+                
+                char out_path[512];
+                snprintf(out_path, sizeof(out_path), "%s/%s", target_dir, name);
+                
+                FILE* out = fopen(out_path, "wb");
+                if (out) {
+                    fwrite(buffer + i, 1, extracted_size, out);
+                    fclose(out);
+                    
+                    fprintf(stdout, "  Found Mach-O: %s (offset=%lu, size=%zu bytes, cputype=0x%X, filetype=0x%X)\n", 
+                            name, (unsigned long)(offset + i), extracted_size, cputype, filetype);
+                    
+                    macho_found++;
+                    file_index++;
+                    i += 2 * 1024 * 1024;
+                }
+            }
+            
+            if (i < actual_read - 100) {
+                if (buffer[i] == 'T' && buffer[i+1] == 'R' && buffer[i+2] == 'A' && buffer[i+3] == 'E') {
+                    char strbuf[256] = {0};
+                    size_t len = 0;
+                    while (i + len < actual_read && len < 255 && buffer[i + len] >= 32 && buffer[i + len] < 127) {
+                        strbuf[len] = buffer[i + len];
+                        len++;
+                    }
+                    strbuf[len] = '\0';
+                    
+                    if (len > 10 && strcmp(strbuf, last_string) != 0 && 
+                        (offset + i - last_string_offset > 1000 || last_string_offset == 0)) {
+                        memcpy(last_string, strbuf, sizeof(last_string) - 1);
+                        last_string[sizeof(last_string) - 1] = '\0';
+                        last_string_offset = offset + i;
+                        
+                        fprintf(stdout, "  Found: %s (offset=%lu)\n", strbuf, (unsigned long)(offset + i));
+                        if (strings_out) {
+                            fprintf(strings_out, "[%lu] %s\n", (unsigned long)(offset + i), strbuf);
+                        }
+                        strings_found++;
+                    }
+                }
+            }
+        }
+        
+        offset += (actual_read > 4 * 1024 * 1024) ? 4 * 1024 * 1024 : actual_read;
+        
+        if (file_index % 20 == 0 && file_index > 0) {
+            fprintf(stdout, "\nProgress: Found %d Mach-O files, %d strings...\n", macho_found, strings_found);
+        }
+    }
+    
+    free(buffer);
+    if (strings_out) fclose(strings_out);
+    
+    fprintf(stdout, "\n===========================================\n");
+    fprintf(stdout, "Extraction complete!\n");
+    fprintf(stdout, "Found %d Mach-O file(s) and %d interesting string(s)\n", macho_found, strings_found);
+    fprintf(stdout, "Output directory: %s\n", target_dir);
+    
+    if (strings_found > 0) {
+        fprintf(stdout, "\nSaved strings to: %s/trae_strings.txt\n", target_dir);
+    }
+    
+    return true;
 }
