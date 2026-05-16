@@ -57,10 +57,6 @@ static uint32_t be32(uint8_t* p) {
            ((uint32_t)p[2] << 8) | (uint32_t)p[3];
 }
 
-static uint16_t be16(uint8_t* p) {
-    return ((uint16_t)p[0] << 8) | (uint16_t)p[1];
-}
-
 static bool is_xz_compressed(uint8_t* data, size_t len) {
     if (len < 6) return false;
     return data[0] == 0xFD && data[1] == '7' && data[2] == 'z' &&
@@ -183,79 +179,6 @@ static uint8_t* decompress_xz_to_temp(FILE* dmg_file, uint64_t offset,
     free(compressed_data);
     free(decompressed);
     *out_decompressed_len = 0;
-    return NULL;
-#endif
-}
-
-static uint8_t* decompress_lzma_chunk(uint8_t* compressed, size_t compressed_len,
-                                       size_t* out_len, size_t expected_size) {
-#ifdef __linux__
-    lzma_stream strm = LZMA_STREAM_INIT;
-    lzma_ret ret = lzma_alone_decoder(&strm, UINT64_MAX);
-
-    if (ret != LZMA_OK) {
-        return NULL;
-    }
-
-    uint8_t* decompressed = (uint8_t*)malloc(expected_size > 0 ? expected_size : compressed_len * 4);
-    if (!decompressed) {
-        lzma_end(&strm);
-        return NULL;
-    }
-
-    strm.next_in = compressed;
-    strm.avail_in = compressed_len;
-    strm.next_out = decompressed;
-    strm.avail_out = expected_size > 0 ? expected_size : compressed_len * 4;
-
-    ret = lzma_code(&strm, LZMA_RUN);
-
-    if (ret != LZMA_STREAM_END && expected_size > 0 && ret != LZMA_OK) {
-        free(decompressed);
-        lzma_end(&strm);
-        return NULL;
-    }
-
-    *out_len = (size_t)(expected_size > 0 ? expected_size : compressed_len * 4 - strm.avail_out);
-    lzma_end(&strm);
-    return decompressed;
-#else
-    return NULL;
-#endif
-}
-
-static uint8_t* decompress_zlib_chunk(uint8_t* compressed, size_t compressed_len,
-                                       size_t* out_len, size_t expected_size) {
-#ifdef __linux__
-    z_stream strm;
-    memset(&strm, 0, sizeof(strm));
-
-    if (inflateInit(&strm) != Z_OK) {
-        return NULL;
-    }
-
-    uint8_t* decompressed = (uint8_t*)malloc(expected_size > 0 ? expected_size : compressed_len * 4);
-    if (!decompressed) {
-        inflateEnd(&strm);
-        return NULL;
-    }
-
-    strm.next_in = compressed;
-    strm.avail_in = (uLong)compressed_len;
-    strm.next_out = decompressed;
-    strm.avail_out = (uLong)(expected_size > 0 ? expected_size : compressed_len * 4);
-
-    int ret = inflate(&strm, Z_FINISH);
-    if (ret != Z_STREAM_END && ret != Z_OK && expected_size > 0) {
-        free(decompressed);
-        inflateEnd(&strm);
-        return NULL;
-    }
-
-    *out_len = (size_t)(expected_size > 0 ? expected_size : compressed_len * 4 - strm.avail_out);
-    inflateEnd(&strm);
-    return decompressed;
-#else
     return NULL;
 #endif
 }
@@ -898,7 +821,8 @@ bool dmg_extract_from_raw_hfs(dmg_context* ctx, const char* output_dir) {
                     
                     if (len > 10 && strcmp(strbuf, last_string) != 0 && 
                         (offset + i - last_string_offset > 1000 || last_string_offset == 0)) {
-                        strncpy(last_string, strbuf, sizeof(last_string) - 1);
+                        memcpy(last_string, strbuf, sizeof(last_string) - 1);
+                        last_string[sizeof(last_string) - 1] = '\0';
                         last_string_offset = offset + i;
                         
                         fprintf(stdout, "  Found: %s (offset=%lu)\n", strbuf, (unsigned long)(offset + i));
