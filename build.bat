@@ -23,14 +23,36 @@ if %ERRORLEVEL% equ 0 (
 )
 
 echo.
-echo Building app_loader...
+echo Building app_loader (Console)...
 cl /nologo /w /O2 /I"%SRC_DIR%" "%SRC_DIR%\macho.c" "%SRC_DIR%\syscall.c" "%SRC_DIR%\vfs.c" "%SRC_DIR%\dyld.c" "%SRC_DIR%\platform.c" "%SRC_DIR%\app_bundle.c" "%SRC_DIR%\dmg.c" "%SRC_DIR%\hfs.c" "%SRC_DIR%\util.c" "%SRC_DIR%\ui.c" "%SRC_DIR%\app_loader.c" /Fe"%BIN_DIR%\app_loader.exe"
+if %ERRORLEVEL% equ 0 (
+    echo Console app_loader build successful!
+) else (
+    echo Console app_loader build failed!
+)
+
+echo.
+echo Building WinDarling GUI...
+where /q wx-config
+if %ERRORLEVEL% equ 0 (
+    set WX_CFLAGS=^& wx-config --cxxflags
+    set WX_LIBS=^& wx-config --libs core,base
+) else (
+    set WX_CFLAGS=-Iwx/include/mswu -DWXUSINGDLL -DwxMSW_VERSION_MAJOR=3 -DwxMSW_VERSION_MINOR=1
+    set WX_LIBS=-lwx_mswu31_core -lwx_mswu31_base -lcomctl32 -lwinmm -ladvapi32 -lole32 -loleaut32 -luuid -lwinspool -lwininet -lshlwapi -lversion -lws2_32
+)
+
+cl /nologo /w /O2 /EHsc %WX_CFLAGS% /I"%SRC_DIR%" "%SRC_DIR%\gui.cpp" "%SRC_DIR%\macho.c" "%SRC_DIR%\syscall.c" "%SRC_DIR%\vfs.c" "%SRC_DIR%\dyld.c" "%SRC_DIR%\platform.c" "%SRC_DIR%\app_bundle.c" "%SRC_DIR%\dmg.c" "%SRC_DIR%\hfs.c" "%SRC_DIR%\util.c" /Fe"%BIN_DIR%\windarling.exe" %WX_LIBS%
 if %ERRORLEVEL% equ 0 (
     echo.
     echo Build completed successfully!
     echo Executables created at:
     echo   - %BIN_DIR%\test_loader.exe
     echo   - %BIN_DIR%\app_loader.exe
+    echo   - %BIN_DIR%\windarling.exe
 ) else (
-    echo App loader build failed!
+    echo GUI build failed!
+    echo Executables created at:
+    echo   - %BIN_DIR%\test_loader.exe
+    echo   - %BIN_DIR%\app_loader.exe
 )
