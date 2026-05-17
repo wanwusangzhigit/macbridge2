@@ -9,8 +9,13 @@
 #include <commdlg.h>
 #include <commctrl.h>
 #include <stdio.h>
+#include <winnls.h>
 
 #ifdef _WIN32
+
+#define WIN32_LEAN_AND_MEAN
+#define UNICODE
+#define _UNICODE
 
 static HINSTANCE hInst;
 
@@ -32,32 +37,32 @@ void CreateMainButtons(HWND hwnd, HINSTANCE hInstance) {
     int startX = (clientWidth - btnWidth) / 2;
     int startY = (clientHeight - (btnHeight * 5 + spacing * 4)) / 2 + 60;
     
-    HWND hTitle = CreateWindow("STATIC", "WinDarling", 
+    HWND hTitle = CreateWindowW(L"STATIC", L"WinDarling", 
         WS_VISIBLE | WS_CHILD | SS_CENTER,
         0, 20, clientWidth, 40, hwnd, NULL, hInstance, NULL);
     SendMessage(hTitle, WM_SETFONT, (WPARAM)GetStockObject(DEFAULT_GUI_FONT), TRUE);
     
-    HWND hSubtitle = CreateWindow("STATIC", "在 Windows 上运行 macOS 应用", 
+    HWND hSubtitle = CreateWindowW(L"STATIC", L"在 Windows 上运行 macOS 应用", 
         WS_VISIBLE | WS_CHILD | SS_CENTER,
         0, 65, clientWidth, 20, hwnd, NULL, hInstance, NULL);
     
-    HWND hBtnInstall = CreateWindow("BUTTON", "📦 安装 DMG 应用",
+    HWND hBtnInstall = CreateWindowW(L"BUTTON", L"📦 安装 DMG 应用",
         WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
         startX, startY, btnWidth, btnHeight, hwnd, (HMENU)IDC_INSTALL_BTN, hInstance, NULL);
     
-    HWND hBtnList = CreateWindow("BUTTON", "📋 查看已安装应用",
+    HWND hBtnList = CreateWindowW(L"BUTTON", L"📋 查看已安装应用",
         WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
         startX, startY + btnHeight + spacing, btnWidth, btnHeight, hwnd, (HMENU)IDC_LIST_BTN, hInstance, NULL);
     
-    HWND hBtnUninstall = CreateWindow("BUTTON", "🗑️  卸载应用",
+    HWND hBtnUninstall = CreateWindowW(L"BUTTON", L"🗑️  卸载应用",
         WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
         startX, startY + (btnHeight + spacing) * 2, btnWidth, btnHeight, hwnd, (HMENU)IDC_UNINSTALL_BTN, hInstance, NULL);
     
-    HWND hBtnDMGInfo = CreateWindow("BUTTON", "ℹ️  DMG 文件信息",
+    HWND hBtnDMGInfo = CreateWindowW(L"BUTTON", L"ℹ️  DMG 文件信息",
         WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
         startX, startY + (btnHeight + spacing) * 3, btnWidth, btnHeight, hwnd, (HMENU)IDC_DMGINFO_BTN, hInstance, NULL);
     
-    HWND hBtnMacho = CreateWindow("BUTTON", "🔍 测试 Mach-O 文件",
+    HWND hBtnMacho = CreateWindowW(L"BUTTON", L"🔍 测试 Mach-O 文件",
         WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
         startX, startY + (btnHeight + spacing) * 4, btnWidth, btnHeight, hwnd, (HMENU)IDC_MACHOTEST_BTN, hInstance, NULL);
 }
@@ -120,11 +125,11 @@ LRESULT CALLBACK InstallDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     ofn.hwndOwner = hwnd;
                     ofn.lpstrFile = szFile;
                     ofn.nMaxFile = sizeof(szFile);
-                    ofn.lpstrFilter = "DMG 文件 (*.dmg)\0*.dmg\0ISO 文件 (*.iso)\0*.iso\0所有文件 (*.*)\0*.*\0";
+                    ofn.lpstrFilter = L"DMG 文件 (*.dmg)\0*.dmg\0ISO 文件 (*.iso)\0*.iso\0所有文件 (*.*)\0*.*\0";
                     ofn.nFilterIndex = 1;
                     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
                     
-                    if(GetOpenFileName(&ofn) == TRUE) {
+                    if(GetOpenFileNameW(&ofn) == TRUE) {
                         strncpy(g_selectedDmgPath, szFile, MAX_PATH - 1);
                         SetDlgItemText(hwnd, IDC_FILE_PATH, szFile);
                         EnableWindow(GetDlgItem(hwnd, IDC_INSTALL_BTN), TRUE);
@@ -134,23 +139,23 @@ LRESULT CALLBACK InstallDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 
                 case IDC_INSTALL_BTN: {
                     if(g_selectedDmgPath[0] == 0) {
-                        MessageBox(hwnd, "请先选择一个 DMG 文件！", "提示", MB_OK | MB_ICONINFORMATION);
+                        MessageBoxW(hwnd, L"请先选择一个 DMG 文件！", L"提示", MB_OK | MB_ICONINFORMATION);
                         return TRUE;
                     }
                     
-                    SetDlgItemText(hwnd, IDC_INSTALL_STATUS, "正在打开 DMG 文件...");
+                    SetDlgItemTextW(hwnd, IDC_INSTALL_STATUS, L"正在打开 DMG 文件...");
                     SendDlgItemMessage(hwnd, IDC_INSTALL_PROGRESS, PBM_SETPOS, 20, 0);
                     UpdateWindow(hwnd);
                     
                     dmg_context* ctx = NULL;
                     if(!dmg_open(g_selectedDmgPath, &ctx)) {
-                        MessageBox(hwnd, "无法打开 DMG 文件！", "错误", MB_OK | MB_ICONERROR);
-                        SetDlgItemText(hwnd, IDC_INSTALL_STATUS, "安装失败");
+                        MessageBoxW(hwnd, L"无法打开 DMG 文件！", L"错误", MB_OK | MB_ICONERROR);
+                        SetDlgItemTextW(hwnd, IDC_INSTALL_STATUS, L"安装失败");
                         SendDlgItemMessage(hwnd, IDC_INSTALL_PROGRESS, PBM_SETPOS, 0, 0);
                         return TRUE;
                     }
                     
-                    SetDlgItemText(hwnd, IDC_INSTALL_STATUS, "正在提取应用...");
+                    SetDlgItemTextW(hwnd, IDC_INSTALL_STATUS, L"正在提取应用...");
                     SendDlgItemMessage(hwnd, IDC_INSTALL_PROGRESS, PBM_SETPOS, 50, 0);
                     UpdateWindow(hwnd);
                     
@@ -160,17 +165,19 @@ LRESULT CALLBACK InstallDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                         dmg_find_and_extract_app(ctx, "*.app", "./extracted");
                     }
                     
-                    SetDlgItemText(hwnd, IDC_INSTALL_STATUS, "正在完成安装...");
+                    SetDlgItemTextW(hwnd, IDC_INSTALL_STATUS, L"正在完成安装...");
                     SendDlgItemMessage(hwnd, IDC_INSTALL_PROGRESS, PBM_SETPOS, 80, 0);
                     UpdateWindow(hwnd);
                     
                     dmg_close(ctx);
                     
                     SendDlgItemMessage(hwnd, IDC_INSTALL_PROGRESS, PBM_SETPOS, 100, 0);
-                    SetDlgItemText(hwnd, IDC_INSTALL_STATUS, "安装完成！");
+                    SetDlgItemTextW(hwnd, IDC_INSTALL_STATUS, L"安装完成！");
                     UpdateWindow(hwnd);
                     
-                    MessageBox(hwnd, "应用安装成功！\n\n应用已提取到：./extracted", "成功", MB_OK | MB_ICONINFORMATION);
+                    MessageBoxW(hwnd, L"应用安装成功！
+
+应用已提取到：./extracted", L"成功", MB_OK | MB_ICONINFORMATION);
                     
                     EndDialog(hwnd, IDOK);
                     break;
@@ -276,7 +283,7 @@ LRESULT CALLBACK UninstallDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
                     int sel = ListView_GetNextItem(hList, -1, LVNI_SELECTED);
                     
                     if(sel == -1) {
-                        MessageBox(hwnd, "请先选择一个应用！", "提示", MB_OK | MB_ICONINFORMATION);
+                        MessageBoxW(hwnd, L"请先选择一个应用！", L"提示", MB_OK | MB_ICONINFORMATION);
                         return TRUE;
                     }
                     
@@ -299,14 +306,14 @@ LRESULT CALLBACK UninstallDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
                     char msg[512];
                     sprintf(msg, "确定要卸载 \"%s\" 吗？\n\n此操作不可恢复！", appName);
                     
-                    if(MessageBox(hwnd, msg, "确认卸载", MB_YESNO | MB_ICONQUESTION) == IDYES) {
+                    if(MessageBoxW(hwnd, L"确定要卸载该应用吗？\n\n此操作不可恢复！", L"确认卸载", MB_YESNO | MB_ICONQUESTION) == IDYES) {
                         if(app_manager_init(NULL)) {
                             if(app_bundle_uninstall(bundleId)) {
-                                MessageBox(hwnd, "应用卸载成功！", "成功", MB_OK | MB_ICONINFORMATION);
+                                MessageBoxW(hwnd, L"应用卸载成功！", L"成功", MB_OK | MB_ICONINFORMATION);
                                 app_manager_cleanup();
                                 EndDialog(hwnd, IDOK);
                             } else {
-                                MessageBox(hwnd, "应用卸载失败！", "错误", MB_OK | MB_ICONERROR);
+                                MessageBoxW(hwnd, L"应用卸载失败！", L"错误", MB_OK | MB_ICONERROR);
                                 app_manager_cleanup();
                             }
                         }
@@ -347,11 +354,11 @@ LRESULT CALLBACK DMGInfoDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     ofn.hwndOwner = hwnd;
                     ofn.lpstrFile = szFile;
                     ofn.nMaxFile = sizeof(szFile);
-                    ofn.lpstrFilter = "DMG 文件 (*.dmg)\0*.dmg\0ISO 文件 (*.iso)\0*.iso\0所有文件 (*.*)\0*.*\0";
+                    ofn.lpstrFilter = L"DMG 文件 (*.dmg)\0*.dmg\0ISO 文件 (*.iso)\0*.iso\0所有文件 (*.*)\0*.*\0";
                     ofn.nFilterIndex = 1;
                     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
                     
-                    if(GetOpenFileName(&ofn) == TRUE) {
+                    if(GetOpenFileNameW(&ofn) == TRUE) {
                         strncpy(g_dmgInfoPath, szFile, MAX_PATH - 1);
                         SetDlgItemText(hwnd, IDC_FILE_PATH, szFile);
                         EnableWindow(GetDlgItem(hwnd, IDOK), TRUE);
@@ -361,13 +368,13 @@ LRESULT CALLBACK DMGInfoDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 
                 case IDOK: {
                     if(g_dmgInfoPath[0] == 0) {
-                        MessageBox(hwnd, "请先选择一个 DMG 文件！", "提示", MB_OK | MB_ICONINFORMATION);
+                        MessageBoxW(hwnd, L"请先选择一个 DMG 文件！", L"提示", MB_OK | MB_ICONINFORMATION);
                         return TRUE;
                     }
                     
                     dmg_context* ctx = NULL;
                     if(!dmg_open(g_dmgInfoPath, &ctx)) {
-                        MessageBox(hwnd, "无法打开 DMG 文件！", "错误", MB_OK | MB_ICONERROR);
+                        MessageBoxW(hwnd, L"无法打开 DMG 文件！", L"错误", MB_OK | MB_ICONERROR);
                         return TRUE;
                     }
                     
@@ -415,7 +422,7 @@ LRESULT CALLBACK MachOTestDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
                     ofn.nFilterIndex = 1;
                     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
                     
-                    if(GetOpenFileName(&ofn) == TRUE) {
+                    if(GetOpenFileNameW(&ofn) == TRUE) {
                         strncpy(g_machoPath, szFile, MAX_PATH - 1);
                         SetDlgItemText(hwnd, IDC_FILE_PATH, szFile);
                         EnableWindow(GetDlgItem(hwnd, IDOK), TRUE);
@@ -425,7 +432,7 @@ LRESULT CALLBACK MachOTestDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
                 
                 case IDOK: {
                     if(g_machoPath[0] == 0) {
-                        MessageBox(hwnd, "请先选择一个文件！", "提示", MB_OK | MB_ICONINFORMATION);
+                        MessageBoxW(hwnd, L"请先选择一个文件！", L"提示", MB_OK | MB_ICONINFORMATION);
                         return TRUE;
                     }
                     
@@ -437,7 +444,7 @@ LRESULT CALLBACK MachOTestDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
                     bool is_64bit = false;
                     
                     if(!parse_macho_header(g_machoPath, &header, &is_64bit)) {
-                        MessageBox(hwnd, "无法解析 Mach-O 文件！", "错误", MB_OK | MB_ICONERROR);
+                        MessageBoxW(hwnd, L"无法解析 Mach-O 文件！", L"错误", MB_OK | MB_ICONERROR);
                         dyld_cleanup();
                         vfs_cleanup();
                         return TRUE;
@@ -445,7 +452,7 @@ LRESULT CALLBACK MachOTestDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
                     
                     void* base_address = NULL;
                     if(!map_macho_segments(g_machoPath, header, is_64bit, &base_address)) {
-                        MessageBox(hwnd, "无法映射 Mach-O 段！", "错误", MB_OK | MB_ICONERROR);
+                        MessageBoxW(hwnd, L"无法映射 Mach-O 段！", L"错误", MB_OK | MB_ICONERROR);
                         free(header);
                         dyld_cleanup();
                         vfs_cleanup();
@@ -459,7 +466,7 @@ LRESULT CALLBACK MachOTestDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
                     dyld_cleanup();
                     vfs_cleanup();
                     
-                    MessageBox(hwnd, "测试完成！", "成功", MB_OK | MB_ICONINFORMATION);
+                    MessageBoxW(hwnd, L"测试完成！", L"成功", MB_OK | MB_ICONINFORMATION);
                     EndDialog(hwnd, IDOK);
                     break;
                 }
@@ -477,32 +484,33 @@ LRESULT CALLBACK MachOTestDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    SetConsoleOutputCP(CP_UTF8);
     hInst = hInstance;
     
-    WNDCLASSEX wc = {0};
-    wc.cbSize        = sizeof(WNDCLASSEX);
+    WNDCLASSEXW wc = {0};
+    wc.cbSize        = sizeof(WNDCLASSEXW);
     wc.style         = CS_HREDRAW | CS_VREDRAW;
     wc.lpfnWndProc   = WinDarlingWndProc;
     wc.hInstance     = hInstance;
     wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)(COLOR_WINDOW+1);
-    wc.lpszClassName = "WinDarlingClass";
+    wc.lpszClassName = L"WinDarlingClass";
     
-    if(!RegisterClassEx(&wc)) {
-        MessageBox(NULL, "窗口注册失败！", "错误", MB_ICONEXCLAMATION | MB_OK);
+    if(!RegisterClassExW(&wc)) {
+        MessageBoxW(NULL, L"窗口注册失败！", L"错误", MB_ICONEXCLAMATION | MB_OK);
         return 0;
     }
     
-    HWND hwnd = CreateWindowEx(
+    HWND hwnd = CreateWindowExW(
         WS_EX_CLIENTEDGE,
-        "WinDarlingClass",
-        "WinDarling - macOS 应用管理器",
+        L"WinDarlingClass",
+        L"WinDarling - macOS 应用管理器",
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 800, 550,
         NULL, NULL, hInstance, NULL);
     
     if(hwnd == NULL) {
-        MessageBox(NULL, "窗口创建失败！", "错误", MB_ICONEXCLAMATION | MB_OK);
+        MessageBoxW(NULL, L"窗口创建失败！", L"错误", MB_ICONEXCLAMATION | MB_OK);
         return 0;
     }
     
@@ -510,9 +518,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     UpdateWindow(hwnd);
     
     MSG msg;
-    while(GetMessage(&msg, NULL, 0, 0) > 0) {
+    while(GetMessageW(&msg, NULL, 0, 0) > 0) {
         TranslateMessage(&msg);
-        DispatchMessage(&msg);
+        DispatchMessageW(&msg);
     }
     
     return msg.wParam;
