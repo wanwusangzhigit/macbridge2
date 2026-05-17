@@ -175,9 +175,7 @@ LRESULT CALLBACK InstallDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                     SetDlgItemTextW(hwnd, IDC_INSTALL_STATUS, L"安装完成！");
                     UpdateWindow(hwnd);
                     
-                    MessageBoxW(hwnd, L"应用安装成功！
-
-应用已提取到：./extracted", L"成功", MB_OK | MB_ICONINFORMATION);
+                    MessageBoxW(hwnd, L"应用安装成功！\n\n应用已提取到：./extracted", L"成功", MB_OK | MB_ICONINFORMATION);
                     
                     EndDialog(hwnd, IDOK);
                     break;
