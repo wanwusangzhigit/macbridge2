@@ -1,0 +1,36 @@
+#ifndef WIN32_GUI_H
+#define WIN32_GUI_H
+
+#ifdef _WIN32
+#include <windows.h>
+
+#define IDC_INSTALL_BTN 1001
+#define IDC_LIST_BTN 1002
+#define IDC_UNINSTALL_BTN 1003
+#define IDC_DMGINFO_BTN 1004
+#define IDC_MACHOTEST_BTN 1005
+
+#define IDC_FILE_PATH 2001
+#define IDC_BROWSE_BTN 2002
+#define IDC_INSTALL_PROGRESS 2003
+#define IDC_INSTALL_STATUS 2004
+
+#define IDC_APP_LIST 3001
+#define IDC_REFRESH_BTN 3002
+
+#define IDC_UNINSTALL_LIST 4001
+
+#define IDC_DMG_INFO_TEXT 5001
+
+#define IDC_MACHO_RESULT 6001
+
+LRESULT CALLBACK WinDarlingWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK InstallDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK AppListDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK UninstallDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK DMGInfoDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK MachOTestDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+#endif
+
+#endif
