@@ -54,6 +54,8 @@
     #define unlink(path) _unlink(path)
     #define access(path, mode) _access(path, mode)
     #define getcwd(buf, size) _getcwd(buf, size)
+    #define strcasecmp _stricmp
+    #define strncasecmp _strnicmp
 #else
     #include <sys/mman.h>
     #include <sys/stat.h>
