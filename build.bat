@@ -34,7 +34,7 @@ if %ERRORLEVEL% equ 0 (
 echo.
 echo Building WinDarling GUI (Win32)...
 rc /nologo "%SRC_DIR%\win32_gui.rc"
-cl /nologo /w /O2 /I"%SRC_DIR%" "%SRC_DIR%\win32_gui.c" "%SRC_DIR%\win32_gui.res" "%SRC_DIR%\macho.c" "%SRC_DIR%\syscall.c" "%SRC_DIR%\vfs.c" "%SRC_DIR%\dyld.c" "%SRC_DIR%\platform.c" "%SRC_DIR%\app_bundle.c" "%SRC_DIR%\dmg.c" "%SRC_DIR%\hfs.c" "%SRC_DIR%\util.c" /Fe"%BIN_DIR%\windarling.exe" /link comctl32.lib shell32.lib
+cl /nologo /w /O2 /I"%SRC_DIR%" "%SRC_DIR%\win32_gui.c" "%SRC_DIR%\win32_gui.res" "%SRC_DIR%\macho.c" "%SRC_DIR%\syscall.c" "%SRC_DIR%\vfs.c" "%SRC_DIR%\dyld.c" "%SRC_DIR%\platform.c" "%SRC_DIR%\app_bundle.c" "%SRC_DIR%\dmg.c" "%SRC_DIR%\hfs.c" "%SRC_DIR%\util.c" /Fe"%BIN_DIR%\windarling.exe" /link comctl32.lib shell32.lib user32.lib gdi32.lib comdlg32.lib
 if %ERRORLEVEL% equ 0 (
     echo.
     echo Build completed successfully!
