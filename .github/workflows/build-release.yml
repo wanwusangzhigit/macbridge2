@@ -96,6 +96,7 @@ jobs:
           mkdir artifacts
           copy bin\test_loader.exe artifacts\ || echo "test_loader not built"
           copy bin\app_loader.exe artifacts\ || echo "app_loader not built"
+          copy bin\windarling.exe artifacts\ || echo "windarling (GUI) not built"
           xcopy /E /I TestApp.app artifacts\TestApp.app\ || echo "TestApp.app not found"
           copy WinDarling\build\Release\test_foundation.exe artifacts\ || copy WinDarling\build\test_foundation.exe artifacts\ || echo "test_foundation not found"
           copy WinDarling\build\Release\advanced_demo.exe artifacts\ || copy WinDarling\build\advanced_demo.exe artifacts\ || echo "advanced_demo not found"
