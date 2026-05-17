@@ -1,3 +1,5 @@
+#pragma execution_character_set("utf-8")
+
 #include "win32_gui.h"
 #include "app_bundle.h"
 #include "dmg.h"
